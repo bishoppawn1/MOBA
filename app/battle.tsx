@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ABILITY_BAR_KEYS, ABILITY_MILESTONES, AbilityKey, AbilityOption, Era, getAbilityTiers, HEROES, Hero, HeroPortrait } from './game';
 
 type Team = 0 | 1;
+type Faction = Team | 2;
 type Lane = 0 | 1 | 2;
 type WorldPoint = { x: number; y: number };
 type TerrainObstacle = WorldPoint & { radius: number; variant: number };
-type UnitType = 'hero' | 'melee' | 'ranged' | 'siege' | 'tower' | 'core' | 'projectile' | 'effect';
+type UnitType = 'hero' | 'melee' | 'ranged' | 'siege' | 'mercenary' | 'tower' | 'core' | 'projectile' | 'effect';
 type ProjectileStyle = 'energy' | 'arrow' | 'bullet' | 'stone' | 'rocket';
 type CommandMode = 'idle' | 'move' | 'attackMove' | 'attackTarget';
 type AbilityLoadout = Array<AbilityOption|null>;
@@ -20,10 +21,21 @@ type Objective = {
   progress: number;
 };
 
+type MercenaryCamp = {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  lane: Lane;
+  unitIds: string[];
+  owner: Team | null;
+  respawnAt: number;
+};
+
 type Unit = {
   id: string;
   type: UnitType;
-  team: Team;
+  team: Faction;
   lane: Lane;
   x: number;
   y: number;
@@ -47,12 +59,18 @@ type Unit = {
   renderX?: number;
   renderY?: number;
   projectileStyle?: ProjectileStyle;
+  campId?: string;
+  homeX?: number;
+  homeY?: number;
+  leashRadius?: number;
+  captured?: boolean;
 };
 
 type Runtime = {
   units: Unit[];
   siegeLanes: [Set<Lane>, Set<Lane>];
   objectives: Objective[];
+  mercenaryCamps: MercenaryCamp[];
   camera: { x: number; y: number };
   aim: { x: number; y: number };
   command: { mode: CommandMode; x: number; y: number; targetId?: string; marker: number };
@@ -71,8 +89,9 @@ type Runtime = {
   outcome: '' | 'VICTORY' | 'DEFEAT';
 };
 
-type MapUnit = { id: string; type: UnitType; team: Team; x: number; y: number };
+type MapUnit = { id: string; type: UnitType; team: Faction; x: number; y: number };
 type MapObjective = { id: string; owner: Team | null; x: number; y: number };
+type MapCamp = { id: string; owner: Team | null; x: number; y: number; respawning: boolean };
 type Hud = {
   hp: number;
   maxHp: number;
@@ -86,6 +105,7 @@ type Hud = {
   command: CommandMode | 'primed';
   mapUnits: MapUnit[];
   mapObjectives: MapObjective[];
+  mapCamps: MapCamp[];
   camera: { x: number; y: number };
   buff: [number, number];
 };
@@ -111,6 +131,15 @@ const LANE_PATHS: Record<Lane, WorldPoint[]> = {
   1: [{ x: 0, y: 900 }, { x: 620, y: 900 }, { x: 1180, y: 820 }, { x: 2020, y: 980 }, { x: 2580, y: 900 }, { x: 3200, y: 900 }],
   2: [{ x: 0, y: 900 }, { x: 260, y: 900 }, { x: 480, y: 1070 }, { x: 720, y: 1370 }, { x: 980, y: 1610 }, { x: 1640, y: 1570 }, { x: 2260, y: 1370 }, { x: 2480, y: 1200 }, { x: 2720, y: 900 }, { x: 3200, y: 900 }],
 };
+
+const MERCENARY_CAMP_SITES = [
+  { id: 'west-north-camp', x: 1120, y: 570 },
+  { id: 'east-north-camp', x: 2080, y: 570 },
+  { id: 'west-south-camp', x: 1120, y: 1230 },
+  { id: 'east-south-camp', x: 2080, y: 1230 },
+] as const;
+const MERCENARY_NEUTRAL_COLOR = '#c69242';
+const MERCENARY_RESPAWN_SECONDS = 35;
 
 function pointOnLane(lane: Lane, x: number) {
   const path = LANE_PATHS[lane];
@@ -154,7 +183,8 @@ for (let y = 100; y < WORLD.height - 80; y += 150) for (let xBase = 360; xBase <
   const inLane = ([0, 1, 2] as Lane[]).some((lane) => pointPathDistance(point, LANE_PATHS[lane]) < LANE_HALF_WIDTH + 74);
   const inRotation = ROTATION_PATHS.some((path) => pointPathDistance(point, path) < 122);
   const nearRelic = Math.hypot(x - 1600, y - 610) < 165 || Math.hypot(x - 1600, y - 1190) < 165;
-  if (!inLane && !inRotation && !nearRelic) TERRAIN_OBSTACLES.push({ x, y, radius: 43, variant: Math.floor(xBase / 150 + y / 150) % 2 });
+  const nearMercenaryCamp = MERCENARY_CAMP_SITES.some((camp) => Math.hypot(x - camp.x, y - camp.y) < 220);
+  if (!inLane && !inRotation && !nearRelic && !nearMercenaryCamp) TERRAIN_OBSTACLES.push({ x, y, radius: 43, variant: Math.floor(xBase / 150 + y / 150) % 2 });
 }
 
 function collidingObstacle(x: number, y: number, radius: number) {
@@ -275,6 +305,35 @@ function setupGame(hero: Hero, era: Era): Runtime {
     [2020, 2500].forEach((x, index) => units.push(unit({ id: `tower-1-${lane}-${index}`, type: 'tower', team: 1, lane, x, y: pointOnLane(lane, x).y, hp: 2400, maxHp: 2400, radius: 48, color: map.team1, damage: 138, range: 430 })));
   });
 
+  const mercenaryCamps: MercenaryCamp[] = MERCENARY_CAMP_SITES.map((site) => {
+    const lane = ([0, 1, 2] as Lane[]).reduce((closest, candidate) => pointPathDistance(site, LANE_PATHS[candidate]) < pointPathDistance(site, LANE_PATHS[closest]) ? candidate : closest, 0 as Lane);
+    const offsets = [{ x: -48, y: 0 }, { x: 34, y: -48 }, { x: 34, y: 48 }];
+    const unitIds = offsets.map((offset, index) => {
+      const id = `${site.id}-merc-${index}`;
+      units.push(unit({
+        id,
+        type: 'mercenary',
+        team: 2,
+        lane,
+        x: site.x + offset.x,
+        y: site.y + offset.y,
+        homeX: site.x + offset.x,
+        homeY: site.y + offset.y,
+        campId: site.id,
+        leashRadius: 170,
+        hp: 480,
+        maxHp: 480,
+        speed: 108,
+        damage: 18,
+        range: 72,
+        radius: 28,
+        color: MERCENARY_NEUTRAL_COLOR,
+      }));
+      return id;
+    });
+    return { ...site, radius: 170, lane, unitIds, owner: null, respawnAt: 0 };
+  });
+
   return {
     units,
     siegeLanes: [new Set<Lane>(), new Set<Lane>()],
@@ -282,6 +341,7 @@ function setupGame(hero: Hero, era: Era): Runtime {
       { id: 'north-relic', x: 1600, y: 610, owner: null, capturing: null, progress: 0 },
       { id: 'south-relic', x: 1600, y: 1190, owner: null, capturing: null, progress: 0 },
     ],
+    mercenaryCamps,
     camera: { x: VIEW_WIDTH / 2, y: LANE_Y[1] },
     aim: { x: 800, y: LANE_Y[1] },
     command: { mode: 'idle', x: 390, y: LANE_Y[1], marker: 0 },
@@ -330,10 +390,10 @@ function drawBox(context: CanvasRenderingContext2D, x: number, y: number, width:
 }
 
 function drawHealth(context: CanvasRenderingContext2D, current: Unit, x: number, y: number) {
-  const width = current.type === 'core' ? 150 : current.type === 'tower' ? 92 : current.type === 'hero' ? 58 : current.type === 'melee' ? 34 : 40;
+  const width = current.type === 'core' ? 150 : current.type === 'tower' ? 92 : current.type === 'hero' || current.type === 'mercenary' ? 58 : current.type === 'melee' ? 34 : 40;
   context.fillStyle = '#0d120f';
   context.fillRect(x - width / 2, y, width, 9);
-  context.fillStyle = current.team === 0 ? '#51b9ff' : '#ff6558';
+  context.fillStyle = current.team === 2 ? '#efba52' : current.team === 0 ? '#51b9ff' : '#ff6558';
   context.fillRect(x - width / 2 + 2, y + 2, (width - 4) * Math.max(0, current.hp / current.maxHp), 5);
 }
 
@@ -622,6 +682,20 @@ function drawUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, el
     drawHealth(context, current, x, y - 163);
   } else if (current.type === 'siege') {
     drawSiegeUnit(context, current, era, x, y);
+  } else if (current.type === 'mercenary') {
+    const direction = current.team === 1 ? -1 : 1;
+    drawBox(context, x - 12, y + 8, 18, 31, 5, shade(current.color, -28));
+    drawBox(context, x + 12, y + 8, 18, 31, 5, shade(current.color, -28));
+    drawBox(context, x, y - 28, 50, 53, 10, current.color);
+    drawBox(context, x - 35, y - 31, 24, 31, 7, shade(current.color, -8));
+    drawBox(context, x + 35, y - 31, 24, 31, 7, shade(current.color, -8));
+    drawBox(context, x, y - 73, 37, 34, 8, shade(current.color, 24));
+    context.fillStyle = '#211a12';
+    context.fillRect(x - 11, y - 78, 7, 6);
+    context.fillRect(x + 5, y - 78, 7, 6);
+    drawBox(context, x + direction * 43, y - 29, 11, 66, 4, '#6a4930');
+    drawBox(context, x + direction * 43, y - 64, 43, 19, 6, era === 'medieval' ? '#9b9b8d' : '#58676c');
+    drawHealth(context, current, x, y - 108);
   } else if (current.type === 'hero') {
     const phase = [...current.id].reduce((total, letter) => total + letter.charCodeAt(0), 0) * .07;
     const moving = Math.hypot(current.x - (current.renderX ?? current.x), current.y - (current.renderY ?? current.y)) > 1;
@@ -687,24 +761,63 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
 
     const ring = (x: number, y: number, radius: number, color: string, team: Team = 0) => runtime.units.push(unit({ id: `fx-${Math.random()}`, type: 'effect', team, lane: 1, x, y, hp: 1, maxHp: 1, radius, color, life: .65 }));
 
-    const kill = (target: Unit, killer: Team) => {
+    const mercenariesFor = (camp: MercenaryCamp) => camp.unitIds.map((id) => runtime.units.find((current) => current.id === id)).filter((current): current is Unit => Boolean(current));
+
+    const restoreMercenary = (current: Unit, team: Faction) => {
+      current.dead = false;
+      current.hp = current.maxHp;
+      current.team = team;
+      current.captured = team !== 2;
+      current.color = team === 2 ? MERCENARY_NEUTRAL_COLOR : team === 0 ? map.team0 : map.team1;
+      current.x = current.homeX ?? current.x;
+      current.y = current.homeY ?? current.y;
+      current.renderX = current.x;
+      current.renderY = current.y;
+      current.targetId = undefined;
+      current.attackWait = 0;
+    };
+
+    const captureMercenaryCamp = (camp: MercenaryCamp, team: Team) => {
+      camp.owner = team;
+      camp.respawnAt = 0;
+      mercenariesFor(camp).forEach((current) => restoreMercenary(current, team));
+      ring(camp.x, camp.y, camp.radius, team === 0 ? map.team0 : map.team1, team);
+    };
+
+    const resetMercenaryCamp = (camp: MercenaryCamp) => {
+      camp.owner = null;
+      camp.respawnAt = 0;
+      mercenariesFor(camp).forEach((current) => restoreMercenary(current, 2));
+      ring(camp.x, camp.y, camp.radius, MERCENARY_NEUTRAL_COLOR);
+    };
+
+    const kill = (target: Unit, killer: Faction) => {
       if (target.dead) return;
       target.dead = true;
       target.hp = 0;
-      if (target.type === 'tower') runtime.siegeLanes[killer].add(target.lane);
-      const xp = target.type === 'hero' ? 90 : target.type === 'siege' ? 35 : target.type === 'tower' ? 120 : target.type === 'core' ? 0 : 18;
-      runtime.teamXp[killer] += xp;
+      if (target.type === 'tower' && killer !== 2) runtime.siegeLanes[killer].add(target.lane);
+      const xp = target.type === 'hero' ? 90 : target.type === 'siege' ? 35 : target.type === 'mercenary' ? 30 : target.type === 'tower' ? 120 : target.type === 'core' ? 0 : 18;
+      if (killer !== 2) runtime.teamXp[killer] += xp;
       if (target.type === 'hero') {
-        runtime.kills[killer]++;
+        if (killer !== 2) runtime.kills[killer]++;
         target.respawn = 5;
-      } else if (target.type === 'core') {
+      } else if (target.type === 'core' && killer !== 2) {
         runtime.outcome = killer === 0 ? 'VICTORY' : 'DEFEAT';
         runtime.running = false;
         onOutcome(runtime.outcome);
+      } else if (target.type === 'mercenary') {
+        const camp = runtime.mercenaryCamps.find((candidate) => candidate.id === target.campId);
+        if (camp && mercenariesFor(camp).every((current) => current.dead)) {
+          if (camp.owner === null && killer !== 2) captureMercenaryCamp(camp, killer);
+          else if (camp.owner !== null) {
+            camp.owner = null;
+            camp.respawnAt = runtime.elapsed + MERCENARY_RESPAWN_SECONDS;
+          }
+        }
       }
     };
 
-    const hit = (target: Unit, amount: number, team: Team) => {
+    const hit = (target: Unit, amount: number, team: Faction) => {
       if (target.dead) return;
       target.hp -= amount;
       if (target.hp <= 0) kill(target, team);
@@ -715,6 +828,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       let bestDistance = maximum;
       for (const candidate of runtime.units) {
         if (candidate.team === source.team || candidate.dead || candidate.type === 'projectile' || candidate.type === 'effect') continue;
+        if (candidate.team === 2 && source.id !== 'player') continue;
         if (laneLocked && candidate.type !== 'core' && candidate.lane !== source.lane) continue;
         const currentDistance = distance(source, candidate);
         if (currentDistance < bestDistance) {
@@ -722,6 +836,23 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
           bestDistance = currentDistance;
         }
       }
+      return best;
+    };
+
+    const nearestMercenaryEnemy = (source: Unit) => {
+      const camp = runtime.mercenaryCamps.find((candidate) => candidate.id === source.campId);
+      if (!camp) return undefined;
+      let best: Unit | undefined;
+      let bestDistance = camp.radius * 2 + source.range;
+      for (const candidate of runtime.units) {
+        if (candidate.type !== 'hero' || candidate.team === 2 || candidate.dead || distance(candidate, camp) > camp.radius) continue;
+        const currentDistance = distance(source, candidate);
+        if (currentDistance < bestDistance) {
+          best = candidate;
+          bestDistance = currentDistance;
+        }
+      }
+      source.targetId = best?.id;
       return best;
     };
 
@@ -781,7 +912,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       const nx = dx / length;
       const ny = dy / length;
       runtime.cooldowns[key] = ABILITY_COOLDOWNS[abilityIndex] / (player.haste || 1);
-      const enemiesNear=(x:number,y:number,radius:number)=>runtime.units.filter((current)=>current.team===1&&!current.dead&&current.type!=='projectile'&&current.type!=='effect'&&Math.hypot(current.x-x,current.y-y)<radius);
+      const enemiesNear=(x:number,y:number,radius:number)=>runtime.units.filter((current)=>current.team!==0&&!current.dead&&current.type!=='projectile'&&current.type!=='effect'&&Math.hypot(current.x-x,current.y-y)<radius);
       if (ability.effect === 'dash') {
         const leap = selectedHero.id === 'volt' ? 190 : 150;
         player.x = Math.max(40, Math.min(WORLD.width - 40, player.x + nx * leap));
@@ -871,7 +1002,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         return;
       }
       if (source.attackWait > 0) return;
-      const buffMultiplier = runtime.teamBuffUntil[source.team] > runtime.elapsed ? 1.2 : 1;
+      const buffMultiplier = source.team !== 2 && runtime.teamBuffUntil[source.team] > runtime.elapsed ? 1.2 : 1;
       const damage = source.damage * buffMultiplier;
       if (source.type === 'tower' || source.type === 'core' || source.type === 'ranged' || source.type === 'siege' || (source.type === 'hero' && source.range >= 160)) {
         const projectileStyle: ProjectileStyle = source.type === 'ranged'
@@ -881,7 +1012,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
             : 'energy';
         spawnProjectile(runtime, source, target.x, target.y, damage, source.color, source.type === 'tower' || source.type === 'core' ? 760 : 610, projectileStyle, target.id);
       } else hit(target, damage, source.team);
-      source.attackWait = source.type === 'hero' ? heroAttackDelay(source.heroId) : source.type === 'tower' ? .72 : source.type === 'core' ? .62 : source.type === 'siege' ? 1.65 : .92;
+      source.attackWait = source.type === 'hero' ? heroAttackDelay(source.heroId) : source.type === 'tower' ? .72 : source.type === 'core' ? .62 : source.type === 'siege' ? 1.65 : source.type === 'mercenary' ? 1.2 : .92;
     };
 
     const objectiveFor = (current: Unit) => {
@@ -954,6 +1085,12 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       }
     };
 
+    const updateMercenaryCamps = () => {
+      runtime.mercenaryCamps.forEach((camp) => {
+        if (camp.respawnAt > 0 && runtime.elapsed >= camp.respawnAt) resetMercenaryCamp(camp);
+      });
+    };
+
     const update = (delta: number) => {
       runtime.elapsed += delta;
       runtime.command.marker = Math.max(0, runtime.command.marker - delta);
@@ -966,6 +1103,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       }
 
       updateObjectives(delta);
+      updateMercenaryCamps();
 
       const player = runtime.units.find((current) => current.id === 'player')!;
       if (!player.dead) updatePlayer(player, delta);
@@ -1018,6 +1156,18 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
           continue;
         }
         if (current.id === 'player') continue;
+        if (current.type === 'mercenary' && !current.captured) {
+          const target = nearestMercenaryEnemy(current);
+          if (target) attack(current, target, delta);
+          else {
+            current.targetId = undefined;
+            const homeX = current.homeX ?? current.x;
+            const homeY = current.homeY ?? current.y;
+            if (Math.hypot(current.x - homeX, current.y - homeY) > 5) moveToward(current, homeX, homeY, delta, 3);
+            current.hp = Math.min(current.maxHp, current.hp + current.maxHp * .2 * delta);
+          }
+          continue;
+        }
         if (current.type === 'tower' || current.type === 'core') {
           const target = nearestEnemy(current, current.range, current.type === 'tower');
           if (target) attack(current, target, delta, false);
@@ -1052,7 +1202,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         }
       }
 
-      runtime.units = runtime.units.filter((current) => !current.dead || current.type === 'hero' || current.type === 'core');
+      runtime.units = runtime.units.filter((current) => !current.dead || current.type === 'hero' || current.type === 'core' || current.type === 'mercenary');
       const smoothing = 1 - Math.exp(-delta * 14);
       runtime.units.forEach((current) => {
         current.renderX = (current.renderX ?? current.x) + (current.x - (current.renderX ?? current.x)) * smoothing;
@@ -1139,6 +1289,27 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         }
       });
 
+      runtime.mercenaryCamps.forEach((camp) => {
+        const color = camp.owner === null ? MERCENARY_NEUTRAL_COLOR : camp.owner === 0 ? map.team0 : map.team1;
+        const respawning = camp.respawnAt > runtime.elapsed;
+        context.fillStyle = '#16140f70';
+        context.beginPath();
+        context.ellipse(camp.x, camp.y + 20, camp.radius, camp.radius * .56, 0, 0, Math.PI * 2);
+        context.fill();
+        context.strokeStyle = color;
+        context.lineWidth = 5;
+        context.setLineDash([16, 12]);
+        context.beginPath();
+        context.arc(camp.x, camp.y, camp.radius, 0, Math.PI * 2);
+        context.stroke();
+        context.setLineDash([]);
+        drawBox(context, camp.x, camp.y + 42, 96, 23, 7, shade(color, -28));
+        context.fillStyle = '#f5f0df';
+        context.font = '900 14px monospace';
+        context.textAlign = 'center';
+        context.fillText(respawning ? `RETURNS IN ${Math.ceil(camp.respawnAt - runtime.elapsed)}s` : camp.owner === null ? 'MERCENARY CAMP' : `${camp.owner === 0 ? 'ALLIED' : 'ENEMY'} SQUAD ACTIVE`, camp.x, camp.y + camp.radius + 28);
+      });
+
       runtime.objectives.forEach((objective) => {
         const ownerColor = objective.owner === null ? '#d9d7c5' : objective.owner === 0 ? map.team0 : map.team1;
         const captureRatio = objective.capturing === null ? 1 : Math.min(1, objective.progress / 3);
@@ -1207,7 +1378,8 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       if (hudWait <= 0) {
         hudWait = .12;
         const mapUnits = runtime.units.filter((current) => !current.dead && current.type !== 'projectile' && current.type !== 'effect').map((current) => ({ id: current.id, type: current.type, team: current.team, x: current.x, y: current.y }));
-        onHud({ hp: player.hp, maxHp: player.maxHp, xp: [...runtime.teamXp] as [number, number], need: [xpNeeded(runtime.teamLevel[0]),xpNeeded(runtime.teamLevel[1])], level: [...runtime.teamLevel] as [number, number], kills: [...runtime.kills] as [number, number], time: runtime.elapsed, cooldowns: { ...runtime.cooldowns }, wave: runtime.wave, command: runtime.attackPrimed ? 'primed' : runtime.command.mode, mapUnits, mapObjectives: runtime.objectives.map(({ id, owner, x, y }) => ({ id, owner, x, y })), camera: { ...runtime.camera }, buff: [...runtime.teamBuffUntil] as [number, number] });
+        const mapCamps = runtime.mercenaryCamps.map(({ id, owner, x, y, respawnAt }) => ({ id, owner, x, y, respawning: respawnAt > runtime.elapsed }));
+        onHud({ hp: player.hp, maxHp: player.maxHp, xp: [...runtime.teamXp] as [number, number], need: [xpNeeded(runtime.teamLevel[0]),xpNeeded(runtime.teamLevel[1])], level: [...runtime.teamLevel] as [number, number], kills: [...runtime.kills] as [number, number], time: runtime.elapsed, cooldowns: { ...runtime.cooldowns }, wave: runtime.wave, command: runtime.attackPrimed ? 'primed' : runtime.command.mode, mapUnits, mapObjectives: runtime.objectives.map(({ id, owner, x, y }) => ({ id, owner, x, y })), mapCamps, camera: { ...runtime.camera }, buff: [...runtime.teamBuffUntil] as [number, number] });
       }
       if (runtime.running || runtime.outcome) requestAnimationFrame(frame);
     };
@@ -1236,16 +1408,17 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
   return <canvas ref={canvasRef} width={1280} height={720} className="battleCanvas" aria-label="Playable three-lane Blockbound Arena battlefield" />;
 }
 
-function Minimap({ units, objectives, camera }: { units: MapUnit[]; objectives: MapObjective[]; camera: { x: number; y: number } }) {
+function Minimap({ units, objectives, camps, camera }: { units: MapUnit[]; objectives: MapObjective[]; camps: MapCamp[]; camera: { x: number; y: number } }) {
   return <div className="minimap" aria-label="Battlefield minimap">
     <i className="mapRiver" />
     <svg className="mapPaths" viewBox={`0 0 ${WORLD.width} ${WORLD.height}`} preserveAspectRatio="none" aria-hidden="true">
       {([0, 1, 2] as Lane[]).map((lane) => <path key={lane} className="mapPath" d={minimapPath(lane)} />)}
     </svg>
     {objectives.map((objective) => <i key={objective.id} className={`mapObjective ${objective.owner === null ? 'mapNeutral' : objective.owner === 0 ? 'mapBlue' : 'mapRed'}`} style={{ left: `${objective.x / WORLD.width * 100}%`, top: `${objective.y / WORLD.height * 100}%` }} />)}
+    {camps.map((camp) => <i key={camp.id} className={`mapCamp ${camp.respawning ? 'mapCampRespawning' : ''} ${camp.owner === null ? 'mapNeutralUnit' : camp.owner === 0 ? 'mapBlue' : 'mapRed'}`} style={{ left: `${camp.x / WORLD.width * 100}%`, top: `${camp.y / WORLD.height * 100}%` }} />)}
     {units.map((current) => <i
       key={current.id}
-      className={`mapUnit map${current.type[0].toUpperCase()}${current.type.slice(1)} ${current.team === 0 ? 'mapBlue' : 'mapRed'} ${current.id === 'player' ? 'mapPlayer' : ''}`}
+      className={`mapUnit map${current.type[0].toUpperCase()}${current.type.slice(1)} ${current.team === 2 ? 'mapNeutralUnit' : current.team === 0 ? 'mapBlue' : 'mapRed'} ${current.id === 'player' ? 'mapPlayer' : ''}`}
       style={{ left: `${current.x / WORLD.width * 100}%`, top: `${current.y / WORLD.height * 100}%` }}
     />)}
     <i className="mapViewport" style={{ left: `${(camera.x - VIEW_WIDTH / 2) / WORLD.width * 100}%`, top: `${(camera.y - 450) / WORLD.height * 100}%`, width: `${VIEW_WIDTH / WORLD.width * 100}%`, height: `${900 / WORLD.height * 100}%` }} />
@@ -1258,7 +1431,7 @@ export function Battle({ hero, era, onExit }: { hero: Hero; era: Era; onExit: ()
   const [choiceLevel,setChoiceLevel]=useState<number|null>(null);
   const [levelNotice,setLevelNotice]=useState<number|null>(null);
   const noticeTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
-  const [hud, setHud] = useState<Hud>({ hp: hero.hp, maxHp: hero.hp, xp: [0, 0], need: [xpNeeded(1),xpNeeded(1)], level: [1, 1], kills: [0, 0], time: 0, cooldowns: { q: 0, w: 0, e: 0, r: 0, t: 0 }, wave: 0, command: 'idle', mapUnits: [], mapObjectives: [], camera: { x: VIEW_WIDTH / 2, y: LANE_Y[1] }, buff: [0, 0] });
+  const [hud, setHud] = useState<Hud>({ hp: hero.hp, maxHp: hero.hp, xp: [0, 0], need: [xpNeeded(1),xpNeeded(1)], level: [1, 1], kills: [0, 0], time: 0, cooldowns: { q: 0, w: 0, e: 0, r: 0, t: 0 }, wave: 0, command: 'idle', mapUnits: [], mapObjectives: [], mapCamps: [], camera: { x: VIEW_WIDTH / 2, y: LANE_Y[1] }, buff: [0, 0] });
   const [outcome, setOutcome] = useState<'' | 'VICTORY' | 'DEFEAT'>('');
   const [tip, setTip] = useState(true);
   const gameKey = useMemo(() => `${hero.id}-${era}`, [hero.id, era]);
@@ -1299,7 +1472,7 @@ export function Battle({ hero, era, onExit }: { hero: Hero; era: Era; onExit: ()
       <div className="teamXp teamXpRed"><span><small>{Math.floor(hud.xp[1])} / {hud.need[1]} XP</small><b>ENEMY · LEVEL {hud.level[1]}</b></span><i><b style={{ width: `${Math.min(100,hud.xp[1] / hud.need[1] * 100)}%` }} /></i></div>
       <div className={`commandModeTag ${hud.command === 'primed' ? 'commandPrimed' : ''}`}>{commandLabel}</div>
       {hud.buff[0] > hud.time && <div className="relicBuff">POWER RELIC · +20% DAMAGE · {Math.ceil(hud.buff[0] - hud.time)}s</div>}
-      {tip && <div className="controlTip"><button onClick={() => setTip(false)}>×</button><b><kbd>RIGHT-CLICK</kbd> TO MOVE</b><span>Trees and blockades are solid terrain—use the winding jungle roads. Targeted shots track enemies; press <kbd>A</kbd> then left-click to attack-move.</span></div>}
+      {tip && <div className="controlTip"><button onClick={() => setTip(false)}>×</button><b><kbd>RIGHT-CLICK</kbd> TO MOVE</b><span>Trees and blockades are solid terrain. Clear a gold mercenary camp to recruit its squad for a lane push; press <kbd>A</kbd> then left-click to attack-move.</span></div>}
       {levelNotice!==null&&<div className={`levelNotice ${noticeIsMilestone?'specialLevel':''}`}><small>TEAM LEVEL</small><b>{levelNotice}</b><span>{noticeIsMilestone?'ABILITY CHOICE AVAILABLE':'BASE STATS INCREASED'}</span></div>}
       {choiceTier&&<div className="abilityChoicePanel"><p>LEVEL {choiceTier.level} · <kbd>{choiceTier.key.toUpperCase()}</kbd> SLOT</p><h3>CHOOSE AN ABILITY</h3><span>This choice fills the next space in your bottom ability bar.</span><div>{choiceTier.choices.map(choice=><button key={choice.name} onClick={()=>chooseAbility(choice)}><i>{choice.icon}</i><b>{choice.name}</b><small>{choice.description}</small></button>)}</div></div>}
       {outcome && <div className="outcomeOverlay"><p>{outcome === 'VICTORY' ? 'ENEMY HEART SHATTERED' : 'YOUR HEART HAS FALLEN'}</p><h2>{outcome}</h2><div><span>TEAM LEVEL <b>{hud.level[0]}</b></span><span>TAKEDOWNS <b>{hud.kills[0]}</b></span><span>TIME <b>{formatTime(hud.time)}</b></span></div><button onClick={onExit}>RETURN TO HQ</button></div>}
@@ -1307,7 +1480,7 @@ export function Battle({ hero, era, onExit }: { hero: Hero; era: Era; onExit: ()
     <footer className="battleHud">
       <div className="playerPanel"><HeroPortrait hero={hero} /><span><small>{hero.role}</small><b>{hero.name}</b><i><b style={{ width: `${Math.max(0, hud.hp / hud.maxHp * 100)}%` }} /></i><em>{Math.ceil(Math.max(0, hud.hp))} / {Math.ceil(hud.maxHp)}</em></span></div>
       <div className="abilities" aria-label="Ability bar">{abilityTiers.map((tier,index)=>{const selected=selectedAbilities[index],cooldown=hud.cooldowns[tier.key],locked=!selected;return <div key={tier.level} className={`${cooldown>0?'cooling':''} ${locked?'locked':''}`} aria-label={selected?`${selected.name} ability`:`Ability slot unlocks at level ${tier.level}`}><kbd>{tier.key.toUpperCase()}</kbd><i style={{'--cool':`${Math.min(100,cooldown/ABILITY_COOLDOWNS[index]*100)}%`} as React.CSSProperties}>{locked?`LVL ${tier.level}`:cooldown>0?cooldown.toFixed(1):selected.icon}</i><span>{selected?.name??'Unchosen'}</span></div>})}</div>
-      <Minimap units={hud.mapUnits} objectives={hud.mapObjectives} camera={hud.camera} />
+      <Minimap units={hud.mapUnits} objectives={hud.mapObjectives} camps={hud.mapCamps} camera={hud.camera} />
     </footer>
   </main>;
 }

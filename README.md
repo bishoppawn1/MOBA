@@ -2,9 +2,9 @@
 
 [**Play Blockbound Arena on GitHub Pages →**](https://bishoppawn1.github.io/MOBA/)
 
-A playable block-forged MOBA prototype featuring ten heroes, medieval and modern battlegrounds, shared team XP, a five-ability progression tree, minion waves, towers, and destructible hearts.
+A playable block-forged MOBA prototype featuring ten heroes, medieval and modern battlegrounds, shared team XP, a five-ability progression tree, minion waves, recruitable mercenaries, towers, and destructible hearts.
 
-The expanded battlefield has three long winding lanes, collision-based jungle terrain, capturable Power Relics, heavy defensive towers, guaranteed targeted attacks, and distinct melee and ranged hero styles.
+The expanded battlefield has three long winding lanes, collision-based jungle terrain, capturable Power Relics, leash-based mercenary camps that become temporary lane-push squads, heavy defensive towers, guaranteed targeted attacks, and distinct melee and ranged hero styles.
 
 ## Controls
 

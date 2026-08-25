@@ -40,16 +40,18 @@ The intended match loop is:
 - Towers and hearts are durable, high-damage safe zones that punish unsupported dives.
 - Melee, ranged, and siege minions have enough health to sustain a lane fight rather than disappearing in one or two attacks.
 - Two Power Relics sit in the rotation space between lanes. Holding one for three uncontested seconds grants 160 shared XP and a 25-second team damage boost.
+- Four gold mercenary camps sit in the jungle between lanes. Neutral mercenaries fight heroes inside their visible camp boundary, stop chasing when a hero leaves it, return home, and recover health.
+- Clearing every mercenary in a camp recruits the full squad for the team that lands the final takedown. The captured squad marches down the nearest lane toward enemy units and structures until defeated, then the camp returns as neutral after 35 seconds.
 - Trees in Crownkeep and industrial blocks in Neon Divide are solid terrain. Heroes and lane units slide around their collision boundaries while the marked lane and rotation corridors remain open.
 - Targeted basic attacks, including shots from ranged heroes, minions, towers, and hearts, track their chosen target until impact and cannot miss because that target moved. Aimed abilities remain skill shots.
-- Heroes respawn after being defeated. Other destroyed units and structures do not respawn.
+- Heroes respawn after being defeated. Lane units and structures do not respawn; cleared mercenary camps follow their separate 35-second return timer after the captured squad is destroyed.
 - Destroying the enemy heart produces victory; losing the allied heart produces defeat.
 - Crownkeep and Neon Divide share gameplay geometry and balance. Their differences are visual theme and unit/structure naming.
 
 ## Shared progression
 
 - Each team has one shared XP total and one shared level, beginning at level 1 and capped at level 20.
-- Defeating melee or ranged minions grants 18 XP, siege units grant 35 XP, heroes grant 90 XP, and towers grant 120 XP.
+- Defeating melee or ranged minions grants 18 XP, each mercenary grants 30 XP, siege units grant 35 XP, heroes grant 90 XP, and towers grant 120 XP.
 - Reaching the current XP threshold advances the entire team by one level. The threshold is `200 + (current level × 60)` XP.
 - Every level grants allied heroes base health and attack growth.
 - Ordinary levels show a brief, non-blocking on-screen notice and do not interrupt play.
@@ -94,9 +96,10 @@ Each hero has distinct health, speed, attack power, attack cadence, range, color
 - The ability bar sits near the bottom-left and always shows `Q`, `W`, `E`, `R`, and `T`; empty slots show the level required to open them.
 - Ordinary level-ups use a brief notice without stopping the match.
 - Ability milestones pause the match and open a compact two-choice panel immediately above the ability bar.
-- The minimap shows all three lanes plus the current positions of heroes, minions, towers, and both hearts.
+- The minimap shows all three lanes plus the current positions of heroes, minions, mercenaries, towers, and both hearts.
 - The minimap shows both Power Relics and the camera's current viewport.
 - The battlefield and minimap both show all three lane paths meeting at each castle.
+- The minimap marks all four mercenary camp sites, their current team color, and whether they are waiting to respawn.
 - Battlefield units do not show nameplates; hero identity remains visible in selection and the player HUD.
 - Melee minions use a deliberately smaller silhouette than ranged minions and heroes. Crownkeep swordsmen carry a pointed sword with a visible crossguard and grip, a helmet, and a shield; Neon Divide breachers use a riot shield and compact energy blade.
 - Ranged minions must be identifiable by silhouette: Crownkeep archers carry a curved bow, drawn string, arrow, and back quiver, while Neon Divide riflemen carry a long rifle.
@@ -162,3 +165,11 @@ Both battlegrounds use a large, camera-followed world. Lanes are long, wide, and
 - Top-, middle-, and bottom-lane minions follow the shared exit before branching onto their assigned lane.
 - The opposing castle uses the same convergence and spawn behavior in mirrored form.
 - The minimap paths match the battlefield roads and show both three-way castle junctions.
+
+## Acceptance criteria for mercenary camps
+
+- Four neutral camps appear in the jungle and remain visible on the battlefield and minimap.
+- Neutral mercenaries engage heroes inside their camp boundary but do not chase beyond it; disengaged mercenaries return home and recover.
+- Defeating only part of a camp does not recruit it. Defeating the entire camp immediately restores that squad as units belonging to the team that lands the final takedown.
+- Captured mercenaries leave their camp, join the nearest lane, and attack enemy units and structures without attacking other neutral camps.
+- After every captured mercenary in a squad is defeated, its camp shows a 35-second return timer and then respawns as neutral.
