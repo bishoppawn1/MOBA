@@ -30,6 +30,7 @@ The intended match loop is:
 | Cast an aimed ability | Left-click after its preview appears |
 | Move while aiming | Right-click normally; the ability remains armed |
 | Cancel ability targeting | `Escape`, the same ability key, or `A` |
+| Camera zoom | Mouse wheel, or the `+` and `−` controls beside the minimap |
 
 ## Match rules
 
@@ -57,42 +58,47 @@ The intended match loop is:
 - Each team has one shared XP total and one shared level, beginning at level 1 and capped at level 20.
 - Defeating melee or ranged minions grants 18 XP, each mercenary grants 30 XP, siege units grant 35 XP, heroes grant 90 XP, and towers grant 120 XP.
 - Reaching the current XP threshold advances the entire team by one level. The threshold is `200 + (current level × 60)` XP.
-- Every level grants allied heroes base health and attack growth.
+- Every level grants each allied hero small combat-stat growth: 2.5% maximum health, 1.8% damage, 0.4% movement speed, and 0.5 armor. Every third level also grants 1.2% attack speed.
+- Ordinary level growth never improves health regeneration, cooldown recovery, or any other resource-regeneration speed. Those effects are reserved for explicit special milestone rewards.
 - Ordinary levels show a brief, non-blocking on-screen notice and do not interrupt play.
-- Ability milestones at levels 5, 10, 15, and 20 pause the match and present two hero-flavored choices for the newly opened slot.
+- Ability milestones at levels 5, 10, 15, and 20 keep the match running and present three choices for the newly opened slot.
+- Milestone pools mix castable abilities, permanent passive effects, direct stat rewards, and summon abilities. A castable summon creates two temporary voxel escorts; passive and stat rewards apply immediately and cannot be cast.
+- Cooldown recovery may appear only as a special milestone option, such as the level-20 Perfect Cycle capstone. It is never part of automatic level growth.
 - The level-1 starter is fixed. Each later choice is permanent for that match and fills the corresponding empty slot in the bottom ability bar.
+- Milestone prompts are queued if the player leaves an earlier choice open while the match continues.
 - Pressing the key for an empty ability slot must do nothing and must not start a cooldown.
 - Pressing an available directional, dash, or ground-targeted ability key arms it without casting or starting its cooldown. A live indicator follows the pointer and shows the actual line, cone, dash path, or ground radius that will be affected.
 - While an ability is armed, right-click movement remains available and does not dismiss the preview. Left-click confirms the cast from the hero's current position; `Escape`, `A`, or pressing the same key again cancels it.
 - Self-centered novas, fields, and surge effects require no target and therefore cast immediately when their ability key is pressed.
 - Limited-range previews use a green marker for the actual destination or impact point and a faint red line for maximum range. Dash destinations follow the pointer inside that boundary and clamp to it when the pointer is farther away.
+- Pressing the key assigned to a passive or stat reward also does nothing and must not start a cooldown.
 
 ### Ability unlock cadence
 
 | Team level | Slot | Behavior |
 | --- | --- | --- |
 | 1 | `Q` | Fixed starter ability |
-| 5 | `W` | Choose one of two abilities |
-| 10 | `E` | Choose one of two abilities |
-| 15 | `R` | Choose one of two mastery abilities |
-| 20 | `T` | Choose one of two capstone abilities |
+| 5 | `W` | Choose one of three rewards: two hero abilities or Reinforced Core (stat) |
+| 10 | `E` | Choose one of three rewards: two hero abilities or a hero-themed Vanguard summon |
+| 15 | `R` | Choose one of three rewards: two mastery abilities or Predator Rhythm (passive) |
+| 20 | `T` | Choose one of three rewards: two capstone abilities or Perfect Cycle (special passive) |
 
-The hero-selection screen previews the starter and both options at each later milestone. During a match, empty ability slots show their required level. Milestone choices appear at the lower-left edge of the battlefield, directly above the ability bar.
+The hero-selection screen previews the starter and all three options at each later milestone. During a match, empty ability slots show their required level. Milestone choices appear at the lower-left edge of the battlefield, directly above the ability bar, without covering or pausing the entire match.
 
 ## Heroes
 
 | Hero | Role | Level 1 starter | Level 5 choices | Level 10 choices | Level 15 choices | Level 20 choices |
 | --- | --- | --- | --- | --- | --- | --- |
-| Bastion | Tank | Shield Rush | Fault Line / Bulwark Slam | Citadel / Rampart March | Shield Rush Barrage / Iron Dominion | Ascendant Citadel / Last Bastion |
-| Volt | Assassin | Arc Blink | Static Fan / Lightning Step | Overcharge / Chain Storm | Arc Blink Barrage / Flashpoint | Ascendant Overcharge / Absolute Voltage |
-| Nyx | Mage | Void Lance | Gravity Well / Phase Rift | Black Star / Umbral Cascade | Void Lance Barrage / Event Horizon | Ascendant Black Star / Endless Night |
-| Briar | Support | Seedshot | Bramble Ring / Vinewalk | Verdant Dawn / Thornwake | Seedshot Barrage / Ancient Grove | Ascendant Verdant Dawn / Worldroot |
-| Rook | Marksman | Longshot | Combat Roll / Quickdraw | Full Salvo / Ricochet | Longshot Barrage / Kill Zone | Ascendant Full Salvo / Deadeye Protocol |
-| Ember | Mage | Cinder Bolt | Flame Ring / Ash Step | Wildfire / Meteor Brand | Cinder Bolt Barrage / Firestorm | Ascendant Wildfire / Phoenix Dawn |
-| Tide | Tank | Riptide | Undertow / Breakwater | Maelstrom / Tidal Surge | Riptide Barrage / Drowning Field | Ascendant Maelstrom / Leviathan |
-| Kestrel | Assassin | Vault | Blade Fan / Windstep | Final Flight / Razor Cyclone | Vault Barrage / Skyfall | Ascendant Final Flight / Apex Predator |
-| Forge | Fighter | Hammerfall | Molten Ring / Anvil Charge | Redline / Furnace Blast | Hammerfall Barrage / Iron Tempest | Ascendant Redline / Worldbreaker |
-| Echo | Support | Soundbite | Pulse Field / Refrain | Resonance / Sonic Boom | Soundbite Barrage / Chorus Field | Ascendant Resonance / Grand Crescendo |
+| Bastion | Tank | Shield Rush | Fault Line / Bulwark Slam / Reinforced Core | Citadel / Rampart March / Bastion Vanguard | Shield Rush Barrage / Iron Dominion / Predator Rhythm | Ascendant Citadel / Last Bastion / Perfect Cycle |
+| Volt | Assassin | Arc Blink | Static Fan / Lightning Step / Reinforced Core | Overcharge / Chain Storm / Volt Vanguard | Arc Blink Barrage / Flashpoint / Predator Rhythm | Ascendant Overcharge / Absolute Voltage / Perfect Cycle |
+| Nyx | Mage | Void Lance | Gravity Well / Phase Rift / Reinforced Core | Black Star / Umbral Cascade / Nyx Vanguard | Void Lance Barrage / Event Horizon / Predator Rhythm | Ascendant Black Star / Endless Night / Perfect Cycle |
+| Briar | Support | Seedshot | Bramble Ring / Vinewalk / Reinforced Core | Verdant Dawn / Thornwake / Briar Vanguard | Seedshot Barrage / Ancient Grove / Predator Rhythm | Ascendant Verdant Dawn / Worldroot / Perfect Cycle |
+| Rook | Marksman | Longshot | Combat Roll / Quickdraw / Reinforced Core | Full Salvo / Ricochet / Rook Vanguard | Longshot Barrage / Kill Zone / Predator Rhythm | Ascendant Full Salvo / Deadeye Protocol / Perfect Cycle |
+| Ember | Mage | Cinder Bolt | Flame Ring / Ash Step / Reinforced Core | Wildfire / Meteor Brand / Ember Vanguard | Cinder Bolt Barrage / Firestorm / Predator Rhythm | Ascendant Wildfire / Phoenix Dawn / Perfect Cycle |
+| Tide | Tank | Riptide | Undertow / Breakwater / Reinforced Core | Maelstrom / Tidal Surge / Tide Vanguard | Riptide Barrage / Drowning Field / Predator Rhythm | Ascendant Maelstrom / Leviathan / Perfect Cycle |
+| Kestrel | Assassin | Vault | Blade Fan / Windstep / Reinforced Core | Final Flight / Razor Cyclone / Kestrel Vanguard | Vault Barrage / Skyfall / Predator Rhythm | Ascendant Final Flight / Apex Predator / Perfect Cycle |
+| Forge | Fighter | Hammerfall | Molten Ring / Anvil Charge / Reinforced Core | Redline / Furnace Blast / Forge Vanguard | Hammerfall Barrage / Iron Tempest / Predator Rhythm | Ascendant Redline / Worldbreaker / Perfect Cycle |
+| Echo | Support | Soundbite | Pulse Field / Refrain / Reinforced Core | Resonance / Sonic Boom / Echo Vanguard | Soundbite Barrage / Chorus Field / Predator Rhythm | Ascendant Resonance / Grand Crescendo / Perfect Cycle |
 
 Each hero has distinct health, speed, attack power, attack cadence, range, color treatment, and ability names. Tanks, fighters, and assassins use close-range physical basic attacks; marksmen, mages, and supports fire visible projectiles from substantially different preferred ranges. Abilities include aimed shots, dashes, nearby fields, targeted blasts, volleys, and restorative capstone surges.
 
@@ -104,16 +110,18 @@ Each hero has distinct health, speed, attack power, attack cadence, range, color
 - The ability bar sits near the bottom-left and always shows `Q`, `W`, `E`, `R`, and `T`; empty slots show the level required to open them.
 - The currently armed ability is highlighted in the ability bar, and the command banner identifies it while reminding the player how to cast, move, or cancel.
 - Ordinary level-ups use a brief notice without stopping the match.
-- Ability milestones pause the match and open a compact two-choice panel immediately above the ability bar.
+- Ability milestones keep the match live and open a compact three-choice panel immediately above the ability bar.
+- Each choice identifies itself as active, passive, summon, or stat, and learned passives remain visibly marked in their ability-bar slot.
 - The minimap shows all three lanes plus the current positions of heroes, minions, mercenaries, towers, and both hearts.
 - The minimap shows both Power Relics and the camera's current viewport.
+- The mouse wheel and visible `+`/`−` buttons zoom the camera between a useful close view and a broad battlefield view; the minimap viewport updates with the zoom level.
 - The battlefield and minimap both show all three lane paths meeting at each castle.
 - The minimap marks all four mercenary camp sites, their current team color, and whether they are waiting to respawn.
 - Battlefield units do not show nameplates; hero identity remains visible in selection and the player HUD.
 - Melee minions use a deliberately smaller silhouette than ranged minions and heroes. Crownkeep swordsmen carry a pointed sword with a visible crossguard and grip, a helmet, and a shield; Neon Divide breachers use a riot shield and compact energy blade.
 - Ranged minions must be identifiable by silhouette: Crownkeep archers carry a curved bow, drawn string, arrow, and back quiver, while Neon Divide riflemen carry a long rifle.
 - Siege minions must read as machinery rather than generic carts: Crownkeep catapults have large wheels, an A-frame, throwing arm, counterweight, bucket, and loaded stone; their chassis faces downlane while the loaded bucket rests to the rear. Neon Divide missile carriers use tracks and paired forward-facing launch tubes.
-- Ranged and siege projectiles reinforce those identities with arrows and stones in Crownkeep and bullets and rockets in Neon Divide.
+- Ranged and siege projectiles reinforce those identities with arrows and stones in Crownkeep and bullets and rockets in Neon Divide. Every projectile, including hero energy shots, is assembled from a small cluster of glowing cubes rather than lines, polygons, or a single large cube.
 - Bars are appropriate for live, changing resources such as health and XP. This restriction applies only to static character attributes.
 - Controls and progression should be understandable without opening external documentation.
 
@@ -146,8 +154,11 @@ Both battlegrounds use a large, camera-followed world. Lanes are long, wide, and
 - A new match starts at team level 1 with only `Q` available.
 - The ability bar contains five slots, with four visibly empty at the start.
 - Ordinary levels show a non-blocking notice and do not pause play.
-- Levels 5, 10, 15, and 20 pause play and present two choices for the new slot.
-- Choosing an ability closes the panel, fills its slot, and resumes the match.
+- Levels 5, 10, 15, and 20 keep play running and present three choices for the new slot.
+- Each milestone offers a mixture of hero actions and a stat, summon, or passive alternative as defined in the cadence table.
+- Choosing a reward closes the current panel and fills its slot; the match never needs to resume because it never pauses.
+- Direct stat and passive choices apply once, stay visible in the ability bar, and cannot be activated or consume cooldowns.
+- Automatic level growth increases health, damage, movement speed, armor, and sometimes attack speed without changing regeneration or cooldown recovery.
 - Empty-slot inputs do not consume cooldowns.
 - Pressing an available aimed ability key shows its targeting preview but does not deal damage, move the hero, launch projectiles, or consume its cooldown until left-click confirms it.
 - Pressing an available self-cast nova, field, or surge key activates the ability immediately and starts its cooldown without requiring a left-click.
@@ -155,8 +166,15 @@ Both battlegrounds use a large, camera-followed world. Lanes are long, wide, and
 - A dash aimed inside its maximum range ends at the green pointer marker; a dash aimed beyond maximum range ends where that marker is clamped to the red boundary.
 - Right-clicking while an ability is armed moves the hero while keeping the ability armed, and the preview updates from the hero's new position.
 - `Escape`, `A`, or pressing the armed ability key again cancels targeting without consuming a cooldown.
-- Ember starts with Cinder Bolt, then chooses between Flame Ring and Ash Step at level 5, Wildfire and Meteor Brand at level 10, Cinder Bolt Barrage and Firestorm at level 15, and Ascendant Wildfire and Phoenix Dawn at level 20.
+- Ember starts with Cinder Bolt, then gains a third alternative alongside Flame Ring/Ash Step at level 5, Wildfire/Meteor Brand at level 10, Cinder Bolt Barrage/Firestorm at level 15, and Ascendant Wildfire/Phoenix Dawn at level 20.
 - Hero selection and the in-match HUD communicate the same slots, choices, and milestone levels.
+
+## Acceptance criteria for zoom and projectiles
+
+- Scrolling over the battlefield and using the visible `+`/`−` controls both change the camera zoom within the same supported range.
+- Pointer aiming and world clicks remain aligned with the cursor at every zoom level.
+- The minimap viewport grows when zooming out and shrinks when zooming in.
+- Energy shots, arrows, stones, bullets, and rockets are recognizable voxel clusters made only from small cubes and use glow to remain readable in motion.
 
 ## Acceptance criteria for lane siege waves
 

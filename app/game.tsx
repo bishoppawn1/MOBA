@@ -7,8 +7,9 @@ type Role = 'TANK' | 'ASSASSIN' | 'MAGE' | 'SUPPORT' | 'MARKSMAN' | 'FIGHTER';
 
 type Upgrade = { name: string; description: string; kind: 'power' | 'health' | 'speed' | 'haste' | 'ability' };
 export type AbilityKey = 'q'|'w'|'e'|'r'|'t';
-export type AbilityEffect = 'bolt'|'dash'|'nova'|'blast'|'volley'|'rapid'|'novaStrong'|'blastStrong'|'surge';
-export type AbilityOption = { name:string; description:string; effect:AbilityEffect; icon:string };
+export type AbilityKind = 'active'|'passive'|'summon'|'stat';
+export type AbilityEffect = 'bolt'|'dash'|'nova'|'blast'|'volley'|'rapid'|'novaStrong'|'blastStrong'|'surge'|'reinforce'|'summon'|'tempo'|'reflow';
+export type AbilityOption = { name:string; description:string; effect:AbilityEffect; icon:string; kind:AbilityKind };
 export type AbilityTier = { level:1|5|10|15|20; key:AbilityKey; choices:AbilityOption[] };
 export const ABILITY_BAR_KEYS:AbilityKey[] = ['q','w','e','r','t'];
 export const ABILITY_MILESTONES = [1,5,10,15,20] as const;
@@ -67,22 +68,26 @@ export const HEROES: Hero[] = [
 export function getAbilityTiers(hero:Hero):AbilityTier[] {
   const starterEffect:AbilityEffect=['bastion','volt','tide','kestrel','forge'].includes(hero.id)?'dash':'bolt';
   return [
-    {level:1,key:'q',choices:[{name:hero.abilities[0],description:hero.abilityNotes[0],effect:starterEffect,icon:'◆'}]},
+    {level:1,key:'q',choices:[{name:hero.abilities[0],description:hero.abilityNotes[0],effect:starterEffect,icon:'◆',kind:'active'}]},
     {level:5,key:'w',choices:[
-      {name:hero.abilities[1],description:hero.abilityNotes[1],effect:'nova',icon:'✦'},
-      {name:hero.abilityBranches[0],description:'Dash toward the cursor and strike enemies at your destination.',effect:'dash',icon:'➜'},
+      {name:hero.abilities[1],description:hero.abilityNotes[1],effect:'nova',icon:'✦',kind:'active'},
+      {name:hero.abilityBranches[0],description:'Dash toward the cursor and strike enemies at your destination.',effect:'dash',icon:'➜',kind:'active'},
+      {name:'Reinforced Core',description:'Permanent: gain 8% maximum health and 4 armor.',effect:'reinforce',icon:'▣',kind:'stat'},
     ]},
     {level:10,key:'e',choices:[
-      {name:hero.abilities[2],description:hero.abilityNotes[2],effect:'blast',icon:'✹'},
-      {name:hero.abilityBranches[1],description:'Launch a wide five-shot volley toward the cursor.',effect:'volley',icon:'⋰'},
+      {name:hero.abilities[2],description:hero.abilityNotes[2],effect:'blast',icon:'✹',kind:'active'},
+      {name:hero.abilityBranches[1],description:'Launch a wide five-shot volley toward the cursor.',effect:'volley',icon:'⋰',kind:'active'},
+      {name:`${hero.name} Vanguard`,description:'Summon two temporary voxel escorts at the cursor.',effect:'summon',icon:'♟',kind:'summon'},
     ]},
     {level:15,key:'r',choices:[
-      {name:`${hero.abilities[0]} Barrage`,description:'Rapidly fire seven empowered shots in a tight spread.',effect:'rapid',icon:'✧'},
-      {name:hero.abilityBranches[2],description:'Release a powerful field around you that punishes nearby enemies.',effect:'novaStrong',icon:'◉'},
+      {name:`${hero.abilities[0]} Barrage`,description:'Rapidly fire seven empowered shots in a tight spread.',effect:'rapid',icon:'✧',kind:'active'},
+      {name:hero.abilityBranches[2],description:'Release a powerful field around you that punishes nearby enemies.',effect:'novaStrong',icon:'◉',kind:'active'},
+      {name:'Predator Rhythm',description:'Passive: gain 10% attack speed and 4% movement speed.',effect:'tempo',icon:'»',kind:'passive'},
     ]},
     {level:20,key:'t',choices:[
-      {name:`Ascendant ${hero.abilities[2]}`,description:'Detonate a massive high-damage area at the cursor.',effect:'blastStrong',icon:'✺'},
-      {name:hero.abilityBranches[3],description:'Unleash your final form, damaging foes and restoring nearby allies.',effect:'surge',icon:'★'},
+      {name:`Ascendant ${hero.abilities[2]}`,description:'Detonate a massive high-damage area at the cursor.',effect:'blastStrong',icon:'✺',kind:'active'},
+      {name:hero.abilityBranches[3],description:'Unleash your final form, damaging foes and restoring nearby allies.',effect:'surge',icon:'★',kind:'active'},
+      {name:'Perfect Cycle',description:'Capstone passive: abilities recover 12% faster.',effect:'reflow',icon:'∞',kind:'passive'},
     ]},
   ];
 }
