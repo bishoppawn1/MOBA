@@ -12,7 +12,9 @@ The expanded battlefield has three long winding lanes, collision-based jungle te
 - Attack-move: press `A`, then left-click the ground
 - Focus an enemy: press `A`, then left-click that enemy
 - Basic attacks fire automatically while attack-moving, focusing a target, or standing near an enemy after moving
-- Ability targeting: press `Q`, `W`, `E`, `R`, or `T` to preview the hit zone, then left-click to cast
+- Aimed abilities: press `Q`, `W`, `E`, `R`, or `T` to preview the hit zone, then left-click to cast
+- Self-cast abilities fire immediately when their key is pressed
+- Green markers show the actual destination or impact point; faint red lines show maximum range
 - Movement remains available while aiming; right-click to move or press `Escape` to cancel without using the cooldown
 
 Heroes begin with one starter ability. At team levels 5, 10, 15, and 20, play pauses briefly so you can choose one of two hero-specific abilities for the next slot.

@@ -122,6 +122,13 @@ const CASTLE_X: [number, number] = [150, 3050];
 const MINION_SPAWN_X: [number, number] = [210, 2990];
 const ABILITY_COOLDOWNS = [5,8,12,18,28];
 const xpNeeded = (level:number)=>200+level*60;
+const abilityRequiresAim = (ability: AbilityOption) => !['nova', 'novaStrong', 'surge'].includes(ability.effect);
+const abilityMaximumRange = (ability: AbilityOption, hero: Hero) => ability.effect === 'dash'
+  ? hero.id === 'volt' ? 190 : 150
+  : ability.effect === 'blastStrong' ? 720
+    : ability.effect === 'blast' ? 620
+      : ability.effect === 'bolt' ? 520
+        : 570;
 
 const MAPS = {
   medieval: { name: 'CROWNKEEP', sub: 'MEDIEVAL FRONTIER', ground: '#667e42', ground2: '#7e9250', lane: '#b5a272', river: '#4c91a5', team0: '#3e8fdb', team1: '#da5947' },
@@ -897,12 +904,12 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       const nx = dx / length;
       const ny = dy / length;
       if (ability.effect === 'dash') {
-        const leap = heroRef.current.id === 'volt' ? 190 : 150;
-        const destination = navigableDestination(player.x + nx * leap, player.y + ny * leap, player.radius, player);
+        const travel = Math.min(Math.hypot(dx, dy), abilityMaximumRange(ability, heroRef.current));
+        const destination = navigableDestination(player.x + nx * travel, player.y + ny * travel, player.radius, player);
         return { x: destination.x, y: destination.y, nx, ny };
       }
       if (ability.effect === 'blast' || ability.effect === 'blastStrong') {
-        const castRange = ability.effect === 'blastStrong' ? 720 : 620;
+        const castRange = abilityMaximumRange(ability, heroRef.current);
         const travel = Math.min(length, castRange);
         return { x: player.x + nx * travel, y: player.y + ny * travel, nx, ny };
       }
@@ -978,11 +985,17 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       }
     };
 
-    const beginAbilityTargeting = (key: AbilityKey) => {
+    const activateAbility = (key: AbilityKey) => {
       const player = runtime.units.find((current) => current.id === 'player');
       const abilityIndex = ABILITY_BAR_KEYS.indexOf(key);
       const ability = selectedAbilitiesRef.current[abilityIndex];
       if (!player || player.dead || !ability || runtime.cooldowns[key] > 0 || runtime.outcome || runtime.paused) return;
+      if (!abilityRequiresAim(ability)) {
+        runtime.pendingAbility = undefined;
+        runtime.attackPrimed = false;
+        cast(key);
+        return;
+      }
       runtime.pendingAbility = runtime.pendingAbility === key ? undefined : key;
       runtime.attackPrimed = false;
     };
@@ -998,7 +1011,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         runtime.attackPrimed = false;
         runtime.pendingAbility = undefined;
       }
-      if (!event.repeat && ABILITY_BAR_KEYS.includes(key as AbilityKey)) beginAbilityTargeting(key as AbilityKey);
+      if (!event.repeat && ABILITY_BAR_KEYS.includes(key as AbilityKey)) activateAbility(key as AbilityKey);
     };
 
     const spawnWave = (team: Team) => {
@@ -1273,6 +1286,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       const selectedHero = heroRef.current;
       const targetPoint = abilityTargetPoint(player, ability);
       const angle = Math.atan2(targetPoint.y - player.y, targetPoint.x - player.x);
+      const maxRange = abilityMaximumRange(ability, selectedHero);
       const pulse = .82 + Math.sin(runtime.elapsed * 7) * .12;
       context.save();
       context.lineCap = 'round';
@@ -1283,27 +1297,21 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       context.lineWidth = 4;
       context.globalAlpha = .86;
 
-      if (ability.effect === 'nova' || ability.effect === 'novaStrong' || ability.effect === 'surge') {
-        const radius = ability.effect === 'surge' ? 295 : ability.effect === 'novaStrong' ? 225 : 160;
-        context.globalAlpha = .18;
-        context.beginPath();
-        context.arc(player.x, player.y, radius, 0, Math.PI * 2);
-        context.fill();
-        context.globalAlpha = pulse;
-        context.beginPath();
-        context.arc(player.x, player.y, radius, 0, Math.PI * 2);
-        context.stroke();
-      } else if (ability.effect === 'blast' || ability.effect === 'blastStrong') {
+      if (ability.effect === 'blast' || ability.effect === 'blastStrong') {
         const radius = ability.effect === 'blastStrong' ? 310 : 235;
-        const castRange = ability.effect === 'blastStrong' ? 720 : 620;
-        context.globalAlpha = .3;
+        context.strokeStyle = '#ff6259';
+        context.globalAlpha = .34;
         context.beginPath();
-        context.arc(player.x, player.y, castRange, 0, Math.PI * 2);
+        context.arc(player.x, player.y, maxRange, 0, Math.PI * 2);
         context.stroke();
+        context.strokeStyle = selectedHero.accent;
+        context.globalAlpha = .3;
         context.beginPath();
         context.moveTo(player.x, player.y);
         context.lineTo(targetPoint.x, targetPoint.y);
         context.stroke();
+        context.fillStyle = '#86f06b';
+        context.strokeStyle = '#b9ff9f';
         context.globalAlpha = .2;
         context.beginPath();
         context.arc(targetPoint.x, targetPoint.y, radius, 0, Math.PI * 2);
@@ -1314,6 +1322,14 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         context.arc(targetPoint.x, targetPoint.y, radius, 0, Math.PI * 2);
         context.stroke();
       } else if (ability.effect === 'dash') {
+        context.strokeStyle = '#ff6259';
+        context.setLineDash([13, 9]);
+        context.globalAlpha = .34;
+        context.lineWidth = 4;
+        context.beginPath();
+        context.arc(player.x, player.y, maxRange, 0, Math.PI * 2);
+        context.stroke();
+        context.strokeStyle = '#9cff7b';
         context.setLineDash([]);
         context.globalAlpha = .18;
         context.lineWidth = 72;
@@ -1329,6 +1345,16 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         context.stroke();
         context.beginPath();
         context.arc(targetPoint.x, targetPoint.y, 110, 0, Math.PI * 2);
+        context.stroke();
+        context.fillStyle = '#9cff7b';
+        context.globalAlpha = .32;
+        context.beginPath();
+        context.arc(targetPoint.x, targetPoint.y, 34, 0, Math.PI * 2);
+        context.fill();
+        context.globalAlpha = pulse;
+        context.lineWidth = 6;
+        context.beginPath();
+        context.arc(targetPoint.x, targetPoint.y, 34, 0, Math.PI * 2);
         context.stroke();
       } else {
         const rapid = ability.effect === 'rapid';
@@ -1353,6 +1379,14 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
           context.lineTo(player.x + Math.cos(shotAngle) * range, player.y + Math.sin(shotAngle) * range);
           context.stroke();
         }
+        const spreadHalfAngle = Math.max(.07, step * Math.max(1, (count - 1) / 2));
+        context.strokeStyle = '#ff6259';
+        context.globalAlpha = .38;
+        context.setLineDash([10, 8]);
+        context.lineWidth = 4;
+        context.beginPath();
+        context.arc(player.x, player.y, range, angle - spreadHalfAngle, angle + spreadHalfAngle);
+        context.stroke();
       }
 
       context.setLineDash([]);
@@ -1360,9 +1394,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       context.fillStyle = '#f7fff2';
       context.font = '900 15px monospace';
       context.textAlign = 'center';
-      const labelX = ability.effect === 'nova' || ability.effect === 'novaStrong' || ability.effect === 'surge' ? player.x : targetPoint.x;
-      const labelY = ability.effect === 'nova' || ability.effect === 'novaStrong' || ability.effect === 'surge' ? player.y - 180 : targetPoint.y - 32;
-      context.fillText(`${key.toUpperCase()} · LEFT-CLICK TO CAST`, labelX, labelY);
+      context.fillText(`${key.toUpperCase()} · LEFT-CLICK TO CAST`, targetPoint.x, targetPoint.y - 32);
       context.restore();
     };
 
@@ -1629,7 +1661,7 @@ export function Battle({ hero, era, onExit }: { hero: Hero; era: Era; onExit: ()
       <div className="teamXp teamXpRed"><span><small>{Math.floor(hud.xp[1])} / {hud.need[1]} XP</small><b>ENEMY · LEVEL {hud.level[1]}</b></span><i><b style={{ width: `${Math.min(100,hud.xp[1] / hud.need[1] * 100)}%` }} /></i></div>
       <div className={`commandModeTag ${hud.command === 'primed' ? 'commandPrimed' : ''} ${hud.command === 'abilityTargeting' ? 'commandAbility' : ''}`}>{commandLabel}</div>
       {hud.buff[0] > hud.time && <div className="relicBuff">POWER RELIC · +20% DAMAGE · {Math.ceil(hud.buff[0] - hud.time)}s</div>}
-      {tip && <div className="controlTip"><button onClick={() => setTip(false)}>×</button><b><kbd>RIGHT-CLICK</kbd> TO MOVE</b><span>Press an ability key to preview its hit zone, keep moving with right-click, then left-click to cast. Press <kbd>A</kbd> then left-click to attack-move.</span></div>}
+      {tip && <div className="controlTip"><button onClick={() => setTip(false)}>×</button><b><kbd>RIGHT-CLICK</kbd> TO MOVE</b><span>Aimed abilities preview before left-click; self-cast abilities fire immediately on their key. Press <kbd>A</kbd> then left-click to attack-move.</span></div>}
       {levelNotice!==null&&<div className={`levelNotice ${noticeIsMilestone?'specialLevel':''}`}><small>TEAM LEVEL</small><b>{levelNotice}</b><span>{noticeIsMilestone?'ABILITY CHOICE AVAILABLE':'BASE STATS INCREASED'}</span></div>}
       {choiceTier&&<div className="abilityChoicePanel"><p>LEVEL {choiceTier.level} · <kbd>{choiceTier.key.toUpperCase()}</kbd> SLOT</p><h3>CHOOSE AN ABILITY</h3><span>This choice fills the next space in your bottom ability bar.</span><div>{choiceTier.choices.map(choice=><button key={choice.name} onClick={()=>chooseAbility(choice)}><i>{choice.icon}</i><b>{choice.name}</b><small>{choice.description}</small></button>)}</div></div>}
       {outcome && <div className="outcomeOverlay"><p>{outcome === 'VICTORY' ? 'ENEMY HEART SHATTERED' : 'YOUR HEART HAS FALLEN'}</p><h2>{outcome}</h2><div><span>TEAM LEVEL <b>{hud.level[0]}</b></span><span>TAKEDOWNS <b>{hud.kills[0]}</b></span><span>TIME <b>{formatTime(hud.time)}</b></span></div><button onClick={onExit}>RETURN TO HQ</button></div>}

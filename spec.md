@@ -25,7 +25,8 @@ The intended match loop is:
 | Attack-move | Press `A`, then left-click the ground |
 | Focus attack | Press `A`, then left-click an enemy |
 | Basic attack | Automatic while attack-moving, focusing a target, or idle near an enemy |
-| Aim an ability | Press `Q`, `W`, `E`, `R`, or `T` |
+| Use a self-cast ability | Press its `Q`, `W`, `E`, `R`, or `T` key; it fires immediately |
+| Aim a directional or ground ability | Press its `Q`, `W`, `E`, `R`, or `T` key |
 | Cast an aimed ability | Left-click after its preview appears |
 | Move while aiming | Right-click normally; the ability remains armed |
 | Cancel ability targeting | `Escape`, the same ability key, or `A` |
@@ -61,8 +62,10 @@ The intended match loop is:
 - Ability milestones at levels 5, 10, 15, and 20 pause the match and present two hero-flavored choices for the newly opened slot.
 - The level-1 starter is fixed. Each later choice is permanent for that match and fills the corresponding empty slot in the bottom ability bar.
 - Pressing the key for an empty ability slot must do nothing and must not start a cooldown.
-- Pressing an available ability key arms it without casting or starting its cooldown. A live indicator follows the pointer and shows the actual line, cone, dash path, ground radius, or self-centered radius that will be affected.
+- Pressing an available directional, dash, or ground-targeted ability key arms it without casting or starting its cooldown. A live indicator follows the pointer and shows the actual line, cone, dash path, or ground radius that will be affected.
 - While an ability is armed, right-click movement remains available and does not dismiss the preview. Left-click confirms the cast from the hero's current position; `Escape`, `A`, or pressing the same key again cancels it.
+- Self-centered novas, fields, and surge effects require no target and therefore cast immediately when their ability key is pressed.
+- Limited-range previews use a green marker for the actual destination or impact point and a faint red line for maximum range. Dash destinations follow the pointer inside that boundary and clamp to it when the pointer is farther away.
 
 ### Ability unlock cadence
 
@@ -146,8 +149,10 @@ Both battlegrounds use a large, camera-followed world. Lanes are long, wide, and
 - Levels 5, 10, 15, and 20 pause play and present two choices for the new slot.
 - Choosing an ability closes the panel, fills its slot, and resumes the match.
 - Empty-slot inputs do not consume cooldowns.
-- Pressing an available ability key shows its targeting preview but does not deal damage, move the hero, launch projectiles, or consume its cooldown until left-click confirms it.
-- Directional bolts and volleys preview every projectile path; dashes preview their travel path and landing damage radius; ground blasts preview their clamped cast range and impact radius; self fields preview their radius around the moving hero.
+- Pressing an available aimed ability key shows its targeting preview but does not deal damage, move the hero, launch projectiles, or consume its cooldown until left-click confirms it.
+- Pressing an available self-cast nova, field, or surge key activates the ability immediately and starts its cooldown without requiring a left-click.
+- Directional bolts and volleys preview every projectile path; dashes preview their travel path and green landing marker; ground blasts preview their green impact radius. Limited-range previews show a faint red maximum-range boundary.
+- A dash aimed inside its maximum range ends at the green pointer marker; a dash aimed beyond maximum range ends where that marker is clamped to the red boundary.
 - Right-clicking while an ability is armed moves the hero while keeping the ability armed, and the preview updates from the hero's new position.
 - `Escape`, `A`, or pressing the armed ability key again cancels targeting without consuming a cooldown.
 - Ember starts with Cinder Bolt, then chooses between Flame Ring and Ash Step at level 5, Wildfire and Meteor Brand at level 10, Cinder Bolt Barrage and Firestorm at level 15, and Ascendant Wildfire and Phoenix Dawn at level 20.
