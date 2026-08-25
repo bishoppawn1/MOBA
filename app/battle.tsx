@@ -5,6 +5,8 @@ import { ABILITY_BAR_KEYS, ABILITY_MILESTONES, AbilityKey, AbilityOption, Era, g
 
 type Team = 0 | 1;
 type Lane = 0 | 1 | 2;
+type WorldPoint = { x: number; y: number };
+type TerrainObstacle = WorldPoint & { radius: number; variant: number };
 type UnitType = 'hero' | 'melee' | 'ranged' | 'siege' | 'tower' | 'core' | 'projectile' | 'effect';
 type ProjectileStyle = 'energy' | 'arrow' | 'bullet' | 'stone' | 'rocket';
 type CommandMode = 'idle' | 'move' | 'attackMove' | 'attackTarget';
@@ -90,7 +92,7 @@ type Hud = {
 
 const WORLD = { width: 3200, height: 1800 };
 const VIEW_WIDTH = 1600;
-const LANE_Y: [number, number, number] = [330, 900, 1470];
+const LANE_Y: [number, number, number] = [380, 900, 1420];
 const LANE_NAMES = ['TOP', 'MIDDLE', 'BOTTOM'];
 const LANE_HALF_WIDTH = 128;
 const ROTATION_X = [760, 1600, 2440];
@@ -101,6 +103,110 @@ const MAPS = {
   medieval: { name: 'CROWNKEEP', sub: 'MEDIEVAL FRONTIER', ground: '#667e42', ground2: '#7e9250', lane: '#b5a272', river: '#4c91a5', team0: '#3e8fdb', team1: '#da5947' },
   modern: { name: 'NEON DIVIDE', sub: 'MODERN WARZONE', ground: '#303b3e', ground2: '#3f4a4a', lane: '#626d6e', river: '#1d727e', team0: '#24a7dc', team1: '#f35e55' },
 };
+
+const LANE_PATHS: Record<Lane, WorldPoint[]> = {
+  0: [{ x: 0, y: 380 }, { x: 420, y: 380 }, { x: 980, y: 190 }, { x: 1640, y: 230 }, { x: 2260, y: 430 }, { x: 2800, y: 380 }, { x: 3200, y: 380 }],
+  1: [{ x: 0, y: 900 }, { x: 620, y: 900 }, { x: 1180, y: 820 }, { x: 2020, y: 980 }, { x: 2580, y: 900 }, { x: 3200, y: 900 }],
+  2: [{ x: 0, y: 1420 }, { x: 420, y: 1420 }, { x: 980, y: 1610 }, { x: 1640, y: 1570 }, { x: 2260, y: 1370 }, { x: 2800, y: 1420 }, { x: 3200, y: 1420 }],
+};
+
+function pointOnLane(lane: Lane, x: number) {
+  const path = LANE_PATHS[lane];
+  const clampedX = Math.max(path[0].x, Math.min(path[path.length - 1].x, x));
+  for (let index = 1; index < path.length; index++) {
+    const start = path[index - 1];
+    const end = path[index];
+    if (clampedX > end.x) continue;
+    const ratio = (clampedX - start.x) / Math.max(1, end.x - start.x);
+    return { x: clampedX, y: start.y + (end.y - start.y) * ratio };
+  }
+  return { ...path[path.length - 1] };
+}
+
+function pointSegmentDistance(point: WorldPoint, start: WorldPoint, end: WorldPoint) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const ratio = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared));
+  return Math.hypot(point.x - (start.x + dx * ratio), point.y - (start.y + dy * ratio));
+}
+
+function pointPathDistance(point: WorldPoint, path: WorldPoint[]) {
+  let closest = Infinity;
+  for (let index = 1; index < path.length; index++) closest = Math.min(closest, pointSegmentDistance(point, path[index - 1], path[index]));
+  return closest;
+}
+
+const ROTATION_PATHS: WorldPoint[][] = ROTATION_X.map((centerX, index) => {
+  const direction = index % 2 === 0 ? 1 : -1;
+  const topX = centerX - direction * 70;
+  const middleX = centerX + direction * 80;
+  const bottomX = centerX - direction * 45;
+  return [pointOnLane(0, topX), pointOnLane(1, middleX), pointOnLane(2, bottomX)];
+});
+
+const TERRAIN_OBSTACLES: TerrainObstacle[] = [];
+for (let y = 100; y < WORLD.height - 80; y += 150) for (let xBase = 360; xBase < 2860; xBase += 150) {
+  const x = xBase + ((y / 150) % 2) * 54;
+  const point = { x, y };
+  const inLane = ([0, 1, 2] as Lane[]).some((lane) => pointPathDistance(point, LANE_PATHS[lane]) < LANE_HALF_WIDTH + 74);
+  const inRotation = ROTATION_PATHS.some((path) => pointPathDistance(point, path) < 122);
+  const nearRelic = Math.hypot(x - 1600, y - 610) < 165 || Math.hypot(x - 1600, y - 1190) < 165;
+  if (!inLane && !inRotation && !nearRelic) TERRAIN_OBSTACLES.push({ x, y, radius: 43, variant: Math.floor(xBase / 150 + y / 150) % 2 });
+}
+
+function collidingObstacle(x: number, y: number, radius: number) {
+  return TERRAIN_OBSTACLES.find((obstacle) => Math.hypot(x - obstacle.x, y - obstacle.y) < obstacle.radius + radius);
+}
+
+function navigableDestination(x: number, y: number, radius: number, origin: WorldPoint) {
+  const obstacle = collidingObstacle(x, y, radius);
+  if (!obstacle) return { x, y };
+  const dx = origin.x - obstacle.x;
+  const dy = origin.y - obstacle.y;
+  const length = Math.max(.001, Math.hypot(dx, dy));
+  const clearance = obstacle.radius + radius + 4;
+  return { x: obstacle.x + dx / length * clearance, y: obstacle.y + dy / length * clearance };
+}
+
+function moveWithTerrainCollision(current: Unit, deltaX: number, deltaY: number) {
+  const clampedX = Math.max(35, Math.min(WORLD.width - 35, current.x + deltaX));
+  const clampedY = Math.max(55, Math.min(WORLD.height - 55, current.y + deltaY));
+  const obstacle = collidingObstacle(clampedX, clampedY, current.radius);
+  if (!obstacle) {
+    current.x = clampedX;
+    current.y = clampedY;
+    return true;
+  }
+
+  const separation = Math.max(.001, Math.hypot(current.x - obstacle.x, current.y - obstacle.y));
+  const normalX = (current.x - obstacle.x) / separation;
+  const normalY = (current.y - obstacle.y) / separation;
+  const inward = Math.min(0, deltaX * normalX + deltaY * normalY);
+  let slideX = deltaX - normalX * inward;
+  let slideY = deltaY - normalY * inward;
+  if (Math.hypot(slideX, slideY) < .05) {
+    const turn = obstacle.variant === 0 ? 1 : -1;
+    slideX = -normalY * Math.hypot(deltaX, deltaY) * turn;
+    slideY = normalX * Math.hypot(deltaX, deltaY) * turn;
+  }
+  const slideTargetX = Math.max(35, Math.min(WORLD.width - 35, current.x + slideX));
+  const slideTargetY = Math.max(55, Math.min(WORLD.height - 55, current.y + slideY));
+  if (collidingObstacle(slideTargetX, slideTargetY, current.radius)) return false;
+  current.x = slideTargetX;
+  current.y = slideTargetY;
+  return true;
+}
+
+function traceWorldPath(context: CanvasRenderingContext2D, path: WorldPoint[]) {
+  context.beginPath();
+  context.moveTo(path[0].x, path[0].y);
+  path.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+}
+
+function minimapPath(lane: Lane) {
+  return LANE_PATHS[lane].map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+}
 
 function shade(hex: string, amount: number) {
   const channels = hex.startsWith('#')
@@ -145,7 +251,8 @@ function setupGame(hero: Hero, era: Era): Runtime {
   allyIds.forEach((id, index) => {
     const h = HEROES.find((candidate) => candidate.id === id)!;
     const lane = allyLanes[index];
-    units.push(unit({ id: `ally-${index}`, type: 'hero', team: 0, lane, x: 360 + (index % 2) * 54, y: LANE_Y[lane] + (index > 2 ? 42 : -34), hp: h.hp, maxHp: h.hp, speed: h.speed * .88, damage: h.power * .84, range: h.range, radius: 29, color: h.color, heroId: h.id, abilityPower: 1, haste: 1 }));
+    const x = 360 + (index % 2) * 54;
+    units.push(unit({ id: `ally-${index}`, type: 'hero', team: 0, lane, x, y: pointOnLane(lane, x).y + (index > 2 ? 42 : -34), hp: h.hp, maxHp: h.hp, speed: h.speed * .88, damage: h.power * .84, range: h.range, radius: 29, color: h.color, heroId: h.id, abilityPower: 1, haste: 1 }));
   });
 
   const enemyIds = ['bastion', 'volt', 'echo', 'kestrel', 'ember'];
@@ -153,16 +260,17 @@ function setupGame(hero: Hero, era: Era): Runtime {
   enemyIds.forEach((id, index) => {
     const h = HEROES.find((candidate) => candidate.id === id)!;
     const lane = enemyLanes[index];
-    units.push(unit({ id: `enemy-${index}`, type: 'hero', team: 1, lane, x: 2840 - (index % 2) * 54, y: LANE_Y[lane] + (index > 2 ? 42 : -34), hp: h.hp, maxHp: h.hp, speed: h.speed * .86, damage: h.power * .82, range: h.range, radius: 29, color: h.color, heroId: h.id, abilityPower: 1, haste: 1 }));
+    const x = 2840 - (index % 2) * 54;
+    units.push(unit({ id: `enemy-${index}`, type: 'hero', team: 1, lane, x, y: pointOnLane(lane, x).y + (index > 2 ? 42 : -34), hp: h.hp, maxHp: h.hp, speed: h.speed * .86, damage: h.power * .82, range: h.range, radius: 29, color: h.color, heroId: h.id, abilityPower: 1, haste: 1 }));
   });
 
   units.push(unit({ id: 'core-0', type: 'core', team: 0, lane: 1, x: 150, y: LANE_Y[1], hp: 7200, maxHp: 7200, radius: 96, color: map.team0, damage: 185, range: 500 }));
   units.push(unit({ id: 'core-1', type: 'core', team: 1, lane: 1, x: 3050, y: LANE_Y[1], hp: 7200, maxHp: 7200, radius: 96, color: map.team1, damage: 185, range: 500 }));
 
-  LANE_Y.forEach((y, laneIndex) => {
+  LANE_Y.forEach((_y, laneIndex) => {
     const lane = laneIndex as Lane;
-    [700, 1180].forEach((x, index) => units.push(unit({ id: `tower-0-${lane}-${index}`, type: 'tower', team: 0, lane, x, y, hp: 2400, maxHp: 2400, radius: 48, color: map.team0, damage: 138, range: 430 })));
-    [2020, 2500].forEach((x, index) => units.push(unit({ id: `tower-1-${lane}-${index}`, type: 'tower', team: 1, lane, x, y, hp: 2400, maxHp: 2400, radius: 48, color: map.team1, damage: 138, range: 430 })));
+    [700, 1180].forEach((x, index) => units.push(unit({ id: `tower-0-${lane}-${index}`, type: 'tower', team: 0, lane, x, y: pointOnLane(lane, x).y, hp: 2400, maxHp: 2400, radius: 48, color: map.team0, damage: 138, range: 430 })));
+    [2020, 2500].forEach((x, index) => units.push(unit({ id: `tower-1-${lane}-${index}`, type: 'tower', team: 1, lane, x, y: pointOnLane(lane, x).y, hp: 2400, maxHp: 2400, radius: 48, color: map.team1, damage: 138, range: 430 })));
   });
 
   return {
@@ -489,9 +597,9 @@ function drawUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, el
   context.restore();
 }
 
-function spawnProjectile(runtime: Runtime, source: Unit, targetX: number, targetY: number, damage = source.damage, color = source.color, speed = 480, projectileStyle: ProjectileStyle = 'energy') {
+function spawnProjectile(runtime: Runtime, source: Unit, targetX: number, targetY: number, damage = source.damage, color = source.color, speed = 480, projectileStyle: ProjectileStyle = 'energy', targetId?: string) {
   const length = Math.max(1, Math.hypot(targetX - source.x, targetY - source.y));
-  runtime.units.push(unit({ id: `p-${Math.random()}`, type: 'projectile', team: source.team, lane: source.lane, x: source.x, y: source.y - 8, hp: 1, maxHp: 1, speed, damage, range: 0, radius: 7, color, vx: (targetX - source.x) / length * speed, vy: (targetY - source.y) / length * speed, life: 1.5, projectileStyle }));
+  runtime.units.push(unit({ id: `p-${Math.random()}`, type: 'projectile', team: source.team, lane: source.lane, x: source.x, y: source.y - 8, hp: 1, maxHp: 1, speed, damage, range: 0, radius: 7, color, vx: (targetX - source.x) / length * speed, vy: (targetY - source.y) / length * speed, life: targetId ? 3 : 1.5, targetId, projectileStyle }));
 }
 
 function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHud }: { hero: Hero; era: Era; selectedAbilities: AbilityLoadout; onLevelUp: (level:number) => void; onOutcome: (outcome: 'VICTORY' | 'DEFEAT') => void; onHud: (hud: Hud) => void }) {
@@ -547,7 +655,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       let bestDistance = maximum;
       for (const candidate of runtime.units) {
         if (candidate.team === source.team || candidate.dead || candidate.type === 'projectile' || candidate.type === 'effect') continue;
-        if (laneLocked && candidate.type !== 'core' && Math.abs(candidate.y - LANE_Y[source.lane]) > LANE_HALF_WIDTH + 80) continue;
+        if (laneLocked && candidate.type !== 'core' && candidate.lane !== source.lane) continue;
         const currentDistance = distance(source, candidate);
         if (currentDistance < bestDistance) {
           best = candidate;
@@ -580,9 +688,10 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
     };
 
     const issueCommand = (mode: CommandMode, targetId?: string) => {
-      runtime.command = { mode, x: runtime.aim.x, y: runtime.aim.y, targetId, marker: .8 };
-      runtime.attackPrimed = false;
       const player = runtime.units.find((current) => current.id === 'player');
+      const destination = player ? navigableDestination(runtime.aim.x, runtime.aim.y, player.radius, player) : runtime.aim;
+      runtime.command = { mode, x: destination.x, y: destination.y, targetId, marker: .8 };
+      runtime.attackPrimed = false;
       if (player) player.targetId = mode === 'attackTarget' ? targetId : undefined;
     };
 
@@ -657,7 +766,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
     const spawnWave = (team: Team) => {
       const direction = team === 0 ? 1 : -1;
       const startX = team === 0 ? 300 : 2900;
-      LANE_Y.forEach((laneY, laneIndex) => {
+      LANE_Y.forEach((_laneY, laneIndex) => {
         const lane = laneIndex as Lane;
         const includeSiege = runtime.wave % 3 === 0 && runtime.siegeLanes[team].has(lane);
         const types: UnitType[] = ['melee', 'melee', 'melee', 'melee', 'ranged', 'ranged', 'ranged', ...(includeSiege ? ['siege' as UnitType] : [])];
@@ -669,7 +778,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
             team,
             lane,
             x: startX - direction * index * 34,
-            y: laneY + ((index % 3) - 1) * 42,
+            y: pointOnLane(lane, startX - direction * index * 34).y + ((index % 3) - 1) * 42,
             hp: health,
             maxHp: health,
             speed: type === 'siege' ? 66 : 86,
@@ -688,9 +797,8 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       const length = Math.hypot(dx, dy);
       if (length <= stoppingDistance || length < 1) return true;
       const travel = Math.min(length - stoppingDistance, current.speed * delta);
-      current.x = Math.max(35, Math.min(WORLD.width - 35, current.x + dx / length * travel));
-      current.y = Math.max(55, Math.min(WORLD.height - 55, current.y + dy / length * travel));
-      return false;
+      moveWithTerrainCollision(current, dx / length * travel, dy / length * travel);
+      return Math.hypot(targetX - current.x, targetY - current.y) <= stoppingDistance + 1;
     };
 
     const attack = (source: Unit, target: Unit, delta: number, canMove = true) => {
@@ -709,7 +817,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
           : source.type === 'siege'
             ? eraRef.current === 'medieval' ? 'stone' : 'rocket'
             : 'energy';
-        spawnProjectile(runtime, source, target.x, target.y, damage, source.color, source.type === 'tower' || source.type === 'core' ? 760 : 610, projectileStyle);
+        spawnProjectile(runtime, source, target.x, target.y, damage, source.color, source.type === 'tower' || source.type === 'core' ? 760 : 610, projectileStyle, target.id);
       } else hit(target, damage, source.team);
       source.attackWait = source.type === 'hero' ? heroAttackDelay(source.heroId) : source.type === 'tower' ? .72 : source.type === 'core' ? .62 : source.type === 'siege' ? 1.65 : .92;
     };
@@ -808,7 +916,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
               current.dead = false;
               current.hp = current.maxHp;
               current.x = current.team === 0 ? 350 : 2850;
-              current.y = LANE_Y[current.lane];
+              current.y = pointOnLane(current.lane, current.x).y;
               current.renderX = current.x;
               current.renderY = current.y;
               if (current.id === 'player') runtime.command.mode = 'idle';
@@ -822,10 +930,24 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
           continue;
         }
         if (current.type === 'projectile') {
+          const lockedTarget = current.targetId ? runtime.units.find((candidate) => candidate.id === current.targetId && !candidate.dead) : undefined;
+          if (current.targetId && !lockedTarget) {
+            current.dead = true;
+            continue;
+          }
+          if (lockedTarget) {
+            const targetDistance = Math.max(1, distance(current, lockedTarget));
+            current.vx = (lockedTarget.x - current.x) / targetDistance * current.speed;
+            current.vy = (lockedTarget.y - current.y) / targetDistance * current.speed;
+          }
           current.x += (current.vx || 0) * delta;
           current.y += (current.vy || 0) * delta;
           current.life = (current.life || 0) - delta;
-          const target = runtime.units.find((candidate) => candidate.team !== current.team && !candidate.dead && candidate.type !== 'projectile' && candidate.type !== 'effect' && distance(candidate, current) < candidate.radius + current.radius);
+          const target = lockedTarget && distance(lockedTarget, current) < lockedTarget.radius + current.radius
+            ? lockedTarget
+            : !current.targetId
+              ? runtime.units.find((candidate) => candidate.team !== current.team && !candidate.dead && candidate.type !== 'projectile' && candidate.type !== 'effect' && distance(candidate, current) < candidate.radius + current.radius)
+              : undefined;
           if (target) {
             hit(target, current.damage, current.team);
             current.dead = true;
@@ -858,9 +980,12 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         else {
           const objective = objectiveFor(current);
           if (objective) {
-            const laneY = LANE_Y[current.lane];
-            if (Math.abs(current.y - laneY) > 22 && Math.abs(current.x - objective.x) > 110) moveToward(current, current.x, laneY, delta);
-            else moveToward(current, objective.x, objective.y, delta, Math.max(0, current.range - 8));
+            const direction = current.team === 0 ? 1 : -1;
+            if (Math.abs(current.x - objective.x) > 125) {
+              const routeX = Math.max(0, Math.min(WORLD.width, current.x + direction * 115));
+              const routePoint = pointOnLane(current.lane, routeX);
+              moveToward(current, routePoint.x, routePoint.y, delta, 12);
+            } else moveToward(current, objective.x, objective.y, delta, Math.max(0, current.range - 8));
           }
         }
       }
@@ -904,52 +1029,53 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       context.fillRect(0, 0, 300, WORLD.height);
       context.fillRect(2900, 0, 300, WORLD.height);
 
-      ROTATION_X.forEach((pathX) => {
-        context.fillStyle = shade(map.lane, -25);
-        context.fillRect(pathX - 86, LANE_Y[0] - LANE_HALF_WIDTH, 172, LANE_Y[2] - LANE_Y[0] + LANE_HALF_WIDTH * 2);
-        context.fillStyle = shade(map.lane, -8);
-        context.fillRect(pathX - 68, LANE_Y[0] - LANE_HALF_WIDTH, 136, LANE_Y[2] - LANE_Y[0] + LANE_HALF_WIDTH * 2);
+      context.lineCap = 'round';
+      context.lineJoin = 'round';
+      ROTATION_PATHS.forEach((path) => {
+        context.strokeStyle = shade(map.lane, -25);
+        context.lineWidth = 172;
+        traceWorldPath(context, path);
+        context.stroke();
+        context.strokeStyle = shade(map.lane, -8);
+        context.lineWidth = 136;
+        traceWorldPath(context, path);
+        context.stroke();
       });
 
-      LANE_Y.forEach((laneY, index) => {
-        context.fillStyle = shade(map.lane, -14);
-        context.fillRect(0, laneY - LANE_HALF_WIDTH - 14, WORLD.width, (LANE_HALF_WIDTH + 14) * 2);
-        context.fillStyle = map.lane;
-        context.fillRect(0, laneY - LANE_HALF_WIDTH, WORLD.width, LANE_HALF_WIDTH * 2);
-        context.fillStyle = shade(map.lane, 10);
-        context.fillRect(1545, laneY - LANE_HALF_WIDTH - 6, 110, LANE_HALF_WIDTH * 2 + 12);
+      ([0, 1, 2] as Lane[]).forEach((lane) => {
+        const path = LANE_PATHS[lane];
+        context.strokeStyle = shade(map.lane, -14);
+        context.lineWidth = (LANE_HALF_WIDTH + 14) * 2;
+        traceWorldPath(context, path);
+        context.stroke();
+        context.strokeStyle = map.lane;
+        context.lineWidth = LANE_HALF_WIDTH * 2;
+        traceWorldPath(context, path);
+        context.stroke();
         context.strokeStyle = eraRef.current === 'modern' ? '#d7ffff38' : '#fff3c833';
         context.lineWidth = 3;
         context.setLineDash(eraRef.current === 'modern' ? [28, 24] : [8, 28]);
-        context.beginPath();
-        context.moveTo(0, laneY);
-        context.lineTo(WORLD.width, laneY);
+        traceWorldPath(context, path);
         context.stroke();
         context.setLineDash([]);
+        const labelPoint = pointOnLane(lane, 1600);
         context.fillStyle = '#10150f55';
         context.font = '800 16px monospace';
         context.textAlign = 'center';
-        context.fillText(`${LANE_NAMES[index]} LANE`, 1600, laneY - LANE_HALF_WIDTH - 25);
+        context.fillText(`${LANE_NAMES[lane]} LANE`, labelPoint.x, labelPoint.y - LANE_HALF_WIDTH - 25);
       });
 
-      const startTreeX = Math.max(330, Math.floor(left / 150) * 150);
-      const startTreeY = Math.max(90, Math.floor(top / 150) * 150);
-      for (let treeY = startTreeY; treeY < Math.min(WORLD.height - 70, top + visibleHeight + 150); treeY += 150) for (let treeX = startTreeX; treeX < Math.min(2870, left + VIEW_WIDTH + 150); treeX += 150) {
-        const offsetX = ((treeY / 150) % 2) * 54;
-        const x = treeX + offsetX;
-        const inLane = LANE_Y.some((laneY) => Math.abs(treeY - laneY) < LANE_HALF_WIDTH + 72);
-        const inRotation = ROTATION_X.some((pathX) => Math.abs(x - pathX) < 122);
-        const nearRelic = runtime.objectives.some((objective) => Math.hypot(x - objective.x, treeY - objective.y) < 145);
-        if (inLane || inRotation || nearRelic) continue;
+      TERRAIN_OBSTACLES.filter((obstacle) => obstacle.x > left - 90 && obstacle.x < left + VIEW_WIDTH + 90 && obstacle.y > top - 110 && obstacle.y < top + visibleHeight + 110).forEach((obstacle) => {
+        const { x, y: treeY, variant } = obstacle;
         if (eraRef.current === 'medieval') {
           drawBox(context, x, treeY + 25, 24, 62, 7, '#65452d');
-          drawBox(context, x, treeY - 25, 68, 72, 13, ((treeX + treeY) / 150) % 2 ? '#3e6d39' : '#527d42');
+          drawBox(context, x, treeY - 25, 68, 72, 13, variant ? '#3e6d39' : '#527d42');
         } else {
-          drawBox(context, x, treeY + 10, 58, 92, 12, ((treeX + treeY) / 150) % 2 ? '#39454a' : '#4c5b5d');
+          drawBox(context, x, treeY + 10, 58, 92, 12, variant ? '#39454a' : '#4c5b5d');
           context.fillStyle = '#5ee6ef55';
           context.fillRect(x - 18, treeY - 24, 36, 5);
         }
-      }
+      });
 
       runtime.objectives.forEach((objective) => {
         const ownerColor = objective.owner === null ? '#d9d7c5' : objective.owner === 0 ? map.team0 : map.team1;
@@ -1051,7 +1177,9 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
 function Minimap({ units, objectives, camera }: { units: MapUnit[]; objectives: MapObjective[]; camera: { x: number; y: number } }) {
   return <div className="minimap" aria-label="Battlefield minimap">
     <i className="mapRiver" />
-    {LANE_Y.map((laneY) => <i key={laneY} className="mapLane" style={{ top: `${laneY / WORLD.height * 100}%` }} />)}
+    <svg className="mapPaths" viewBox={`0 0 ${WORLD.width} ${WORLD.height}`} preserveAspectRatio="none" aria-hidden="true">
+      {([0, 1, 2] as Lane[]).map((lane) => <path key={lane} className="mapPath" d={minimapPath(lane)} />)}
+    </svg>
     {objectives.map((objective) => <i key={objective.id} className={`mapObjective ${objective.owner === null ? 'mapNeutral' : objective.owner === 0 ? 'mapBlue' : 'mapRed'}`} style={{ left: `${objective.x / WORLD.width * 100}%`, top: `${objective.y / WORLD.height * 100}%` }} />)}
     {units.map((current) => <i
       key={current.id}
@@ -1109,7 +1237,7 @@ export function Battle({ hero, era, onExit }: { hero: Hero; era: Era; onExit: ()
       <div className="teamXp teamXpRed"><span><small>{Math.floor(hud.xp[1])} / {hud.need[1]} XP</small><b>ENEMY · LEVEL {hud.level[1]}</b></span><i><b style={{ width: `${Math.min(100,hud.xp[1] / hud.need[1] * 100)}%` }} /></i></div>
       <div className={`commandModeTag ${hud.command === 'primed' ? 'commandPrimed' : ''}`}>{commandLabel}</div>
       {hud.buff[0] > hud.time && <div className="relicBuff">POWER RELIC · +20% DAMAGE · {Math.ceil(hud.buff[0] - hud.time)}s</div>}
-      {tip && <div className="controlTip"><button onClick={() => setTip(false)}>×</button><b><kbd>RIGHT-CLICK</kbd> TO MOVE ANYWHERE</b><span>After arriving, you attack nearby enemies. Rotate through jungle paths, hold Power Relics, or press <kbd>A</kbd> then left-click to attack-move.</span></div>}
+      {tip && <div className="controlTip"><button onClick={() => setTip(false)}>×</button><b><kbd>RIGHT-CLICK</kbd> TO MOVE</b><span>Trees and blockades are solid terrain—use the winding jungle roads. Targeted shots track enemies; press <kbd>A</kbd> then left-click to attack-move.</span></div>}
       {levelNotice!==null&&<div className={`levelNotice ${noticeIsMilestone?'specialLevel':''}`}><small>TEAM LEVEL</small><b>{levelNotice}</b><span>{noticeIsMilestone?'ABILITY CHOICE AVAILABLE':'BASE STATS INCREASED'}</span></div>}
       {choiceTier&&<div className="abilityChoicePanel"><p>LEVEL {choiceTier.level} · <kbd>{choiceTier.key.toUpperCase()}</kbd> SLOT</p><h3>CHOOSE AN ABILITY</h3><span>This choice fills the next space in your bottom ability bar.</span><div>{choiceTier.choices.map(choice=><button key={choice.name} onClick={()=>chooseAbility(choice)}><i>{choice.icon}</i><b>{choice.name}</b><small>{choice.description}</small></button>)}</div></div>}
       {outcome && <div className="outcomeOverlay"><p>{outcome === 'VICTORY' ? 'ENEMY HEART SHATTERED' : 'YOUR HEART HAS FALLEN'}</p><h2>{outcome}</h2><div><span>TEAM LEVEL <b>{hud.level[0]}</b></span><span>TAKEDOWNS <b>{hud.kills[0]}</b></span><span>TIME <b>{formatTime(hud.time)}</b></span></div><button onClick={onExit}>RETURN TO HQ</button></div>}

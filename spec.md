@@ -33,11 +33,14 @@ The intended match loop is:
 - Minion waves spawn in all three lanes for both teams on a repeating timer.
 - Every third wave adds a siege unit only in lanes where that team has already destroyed an enemy tower. Before a team destroys a tower, none of its lanes receive siege units.
 - Siege access is tracked separately for each team and lane. Destroying a top-lane tower unlocks allied top-lane siege units without changing middle or bottom waves; destroying towers in additional lanes unlocks those lanes too.
-- The battlefield has three lanes: top, middle, and bottom.
+- The battlefield has three lanes: top, middle, and bottom. Top climbs north and then bends south; bottom bends south and then climbs north; middle follows a shallower opposing curve.
+- Lane minions and bots follow the same curved centerlines shown by the terrain and minimap rather than traveling directly from left to right.
 - Each side has two towers in each lane and one final heart structure.
 - Towers and hearts are durable, high-damage safe zones that punish unsupported dives.
 - Melee, ranged, and siege minions have enough health to sustain a lane fight rather than disappearing in one or two attacks.
 - Two Power Relics sit in the rotation space between lanes. Holding one for three uncontested seconds grants 160 shared XP and a 25-second team damage boost.
+- Trees in Crownkeep and industrial blocks in Neon Divide are solid terrain. Heroes and lane units slide around their collision boundaries while the marked lane and rotation corridors remain open.
+- Targeted basic attacks, including shots from ranged heroes, minions, towers, and hearts, track their chosen target until impact and cannot miss because that target moved. Aimed abilities remain skill shots.
 - Heroes respawn after being defeated. Other destroyed units and structures do not respawn.
 - Destroying the enemy heart produces victory; losing the allied heart produces defeat.
 - Crownkeep and Neon Divide share gameplay geometry and balance. Their differences are visual theme and unit/structure naming.
@@ -111,7 +114,7 @@ A medieval frontier with castles, guard towers, swordsmen, archers, and catapult
 
 A modern warzone with command cores, defense grids, riflemen, rocketeers, and missile carriers.
 
-Both battlegrounds use a large, camera-followed world. Lanes are long and wide, while three broad rotation roads and open jungle space allow unrestricted travel between top, middle, and bottom. Trees and industrial blocks are decorative voxel scenery, not collision walls.
+Both battlegrounds use a large, camera-followed world. Lanes are long, wide, and visibly curved, while three broad winding rotation roads create clear travel routes between top, middle, and bottom. Trees and industrial blocks are solid voxel terrain that shape movement outside those corridors.
 
 ## Technical constraints
 
