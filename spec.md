@@ -38,11 +38,12 @@ The intended match loop is:
 - Minion waves spawn in all three lanes for both teams on a repeating timer.
 - Every third wave adds a siege unit only in lanes where that team has already destroyed an enemy tower. Before a team destroys a tower, none of its lanes receive siege units.
 - Siege access is tracked separately for each team and lane. Destroying a top-lane tower unlocks allied top-lane siege units without changing middle or bottom waves; destroying towers in additional lanes unlocks those lanes too.
-- The battlefield has three lanes: top, middle, and bottom. All three lanes share a road through each castle gate, fan out after leaving the base, cross the battlefield on distinct curved routes, and converge again at the opposing castle.
+- The battlefield is 4800×2700 world units, three full camera widths across and three standard viewport heights tall. It has three wide lanes: top, middle, and bottom. All three lanes share a road through each castle gate, fan out only after leaving the base, cross the battlefield on distinct curved routes, and converge all the way back into the opposing gate road.
 - Lane minions spawn inside their team's castle gate in a compact formation. They travel along the shared base road before separating onto their assigned top, middle, or bottom path.
 - Lane minions and bots follow the same converging curved centerlines shown by the terrain and minimap rather than traveling directly from left to right.
 - Each side has two towers in each lane and one final heart structure.
 - Towers and hearts are durable, high-damage safe zones that punish unsupported dives.
+- Heroes, towers, and hearts acquire opponents by physical proximity regardless of which lane label the opponent last followed. Minions retain lane-locked acquisition so waves remain organized.
 - Melee, ranged, and siege minions have enough health to sustain a lane fight rather than disappearing in one or two attacks.
 - Two Power Relics sit in the rotation space between lanes. Holding one for three uncontested seconds grants 160 shared XP and a 25-second team damage boost.
 - Four gold mercenary camps sit in the jungle between lanes. Neutral mercenaries fight heroes inside their visible camp boundary, stop chasing when a hero leaves it, return home, and recover health.
@@ -119,6 +120,7 @@ Each hero has distinct health, speed, attack power, attack cadence, range, color
 - The minimap marks all four mercenary camp sites, their current team color, and whether they are waiting to respawn.
 - Battlefield units do not show nameplates; hero identity remains visible in selection and the player HUD.
 - Melee minions use a deliberately smaller silhouette than ranged minions and heroes. Crownkeep swordsmen carry a pointed sword with a visible crossguard and grip, a helmet, and a shield; Neon Divide breachers use a riot shield and compact energy blade.
+- Neon Divide close-range heroes have role-specific equipment rather than a generic upright bar: tanks carry broad powered riot shields, while fighters and assassins carry forward-facing energy blades or heavy gauntlets.
 - Ranged minions must be identifiable by silhouette: Crownkeep archers carry a curved bow, drawn string, arrow, and back quiver, while Neon Divide riflemen carry a long rifle.
 - Siege minions must read as machinery rather than generic carts: Crownkeep catapults have large wheels, an A-frame, throwing arm, counterweight, bucket, and loaded stone; their chassis faces downlane while the loaded bucket rests to the rear. Neon Divide missile carriers use tracks and paired forward-facing launch tubes.
 - Ranged and siege projectiles reinforce those identities with arrows and stones in Crownkeep and bullets and rockets in Neon Divide. Every projectile, including hero energy shots, is assembled from a small cluster of glowing cubes rather than lines, polygons, or a single large cube.
@@ -137,7 +139,7 @@ A medieval frontier with castles, guard towers, swordsmen, archers, and catapult
 
 A modern warzone with command cores, defense grids, riflemen, rocketeers, and missile carriers.
 
-Both battlegrounds use a large, camera-followed world. Lanes are long, wide, and visibly curved, while three broad winding rotation roads create clear travel routes between top, middle, and bottom. Trees and industrial blocks are solid voxel terrain that shape movement outside those corridors.
+Both battlegrounds use the same 4800×2700 camera-followed world. Lanes are long, wide, and visibly curved; the top road rises toward the north edge before bending back down, while the bottom road mirrors that route through the south. Three broad winding rotation roads create clear travel routes between top, middle, and bottom. Trees and industrial blocks are solid voxel terrain that shape movement outside those corridors.
 
 ## Technical constraints
 
@@ -190,14 +192,22 @@ Both battlegrounds use a large, camera-followed world. Lanes are long, wide, and
 - A Crownkeep catapult visibly includes wheels and a raised throwing arm with a stone bucket.
 - Allied catapult chassis face toward the enemy castle and enemy catapults mirror toward the allied castle.
 - The equivalent Neon Divide units remain mechanically identical but use rifle and missile-carrier silhouettes.
+- Neon Divide tank heroes read as carrying a wide riot shield, and its fighter and assassin heroes read as carrying a forward-facing weapon rather than a thin vertical plank.
 
 ## Acceptance criteria for castle lane routing
 
+- The battlefield spans 4800×2700 world units, so a normal 1600×900 camera exposes no more than one third of the full map in either dimension.
 - All three rendered lane roads overlap at each castle, remain shared through the gate, and visibly separate outside the base.
 - Every newly spawned minion begins within its team's castle gate rather than appearing independently in its destination lane.
 - Top-, middle-, and bottom-lane minions follow the shared exit before branching onto their assigned lane.
 - The opposing castle uses the same convergence and spawn behavior in mirrored form.
 - The minimap paths match the battlefield roads and show both three-way castle junctions.
+
+## Acceptance criteria for combat awareness
+
+- A hero entering from another lane is attacked when physically inside an enemy hero's awareness radius; lane metadata cannot make the nearby hero invisible to combat AI.
+- Towers and hearts attack eligible opponents inside their actual range regardless of the opponent's lane metadata.
+- Minions remain lane-disciplined and do not abandon their wave merely because another lane passes nearby.
 
 ## Acceptance criteria for mercenary camps
 

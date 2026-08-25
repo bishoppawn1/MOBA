@@ -4,7 +4,7 @@
 
 A playable block-forged MOBA prototype featuring ten heroes, medieval and modern battlegrounds, shared team XP, a five-ability progression tree, minion waves, recruitable mercenaries, towers, and destructible hearts.
 
-The expanded battlefield has three long winding lanes, collision-based jungle terrain, capturable Power Relics, leash-based mercenary camps that become temporary lane-push squads, heavy defensive towers, guaranteed targeted attacks, and distinct melee and ranged hero styles.
+The 4800×2700 battlefield has three long winding lanes that fully converge at both bases, collision-based jungle terrain, capturable Power Relics, leash-based mercenary camps that become temporary lane-push squads, heavy defensive towers, guaranteed targeted attacks, and distinct role-based voxel hero silhouettes.
 
 ## Controls
 
