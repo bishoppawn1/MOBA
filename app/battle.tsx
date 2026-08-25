@@ -8,6 +8,14 @@ type Lane = 0 | 1 | 2;
 type UnitType = 'hero' | 'melee' | 'ranged' | 'siege' | 'tower' | 'core' | 'projectile' | 'effect';
 type CommandMode = 'idle' | 'move' | 'attackMove' | 'attackTarget';
 type AbilityLoadout = Array<AbilityOption|null>;
+type Objective = {
+  id: string;
+  x: number;
+  y: number;
+  owner: Team | null;
+  capturing: Team | null;
+  progress: number;
+};
 
 type Unit = {
   id: string;
@@ -33,11 +41,15 @@ type Unit = {
   heroId?: string;
   abilityPower?: number;
   haste?: number;
+  renderX?: number;
+  renderY?: number;
 };
 
 type Runtime = {
   units: Unit[];
   siegeLanes: [Set<Lane>, Set<Lane>];
+  objectives: Objective[];
+  camera: { x: number; y: number };
   aim: { x: number; y: number };
   command: { mode: CommandMode; x: number; y: number; targetId?: string; marker: number };
   attackPrimed: boolean;
@@ -51,10 +63,12 @@ type Runtime = {
   running: boolean;
   paused: boolean;
   cooldowns: Record<AbilityKey,number>;
+  teamBuffUntil: [number, number];
   outcome: '' | 'VICTORY' | 'DEFEAT';
 };
 
 type MapUnit = { id: string; type: UnitType; team: Team; x: number; y: number };
+type MapObjective = { id: string; owner: Team | null; x: number; y: number };
 type Hud = {
   hp: number;
   maxHp: number;
@@ -67,11 +81,17 @@ type Hud = {
   wave: number;
   command: CommandMode | 'primed';
   mapUnits: MapUnit[];
+  mapObjectives: MapObjective[];
+  camera: { x: number; y: number };
+  buff: [number, number];
 };
 
-const WORLD = { width: 1600, height: 900 };
-const LANE_Y: [number, number, number] = [205, 450, 695];
+const WORLD = { width: 3200, height: 1800 };
+const VIEW_WIDTH = 1600;
+const LANE_Y: [number, number, number] = [330, 900, 1470];
 const LANE_NAMES = ['TOP', 'MIDDLE', 'BOTTOM'];
+const LANE_HALF_WIDTH = 128;
+const ROTATION_X = [760, 1600, 2440];
 const ABILITY_COOLDOWNS = [5,8,12,18,28];
 const xpNeeded = (level:number)=>200+level*60;
 
@@ -81,10 +101,10 @@ const MAPS = {
 };
 
 function shade(hex: string, amount: number) {
-  const n = parseInt(hex.slice(1), 16);
-  const r = Math.max(0, Math.min(255, (n >> 16) + amount));
-  const g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amount));
-  const b = Math.max(0, Math.min(255, (n & 255) + amount));
+  const channels = hex.startsWith('#')
+    ? [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]
+    : (hex.match(/\d+/g)?.slice(0, 3).map(Number) ?? [128, 128, 128]);
+  const [r, g, b] = channels.map((channel) => Math.max(0, Math.min(255, channel + amount)));
   return `rgb(${r},${g},${b})`;
 }
 
@@ -96,21 +116,34 @@ function formatTime(seconds: number) {
   return `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`;
 }
 
+function heroAttackDelay(heroId?: string) {
+  const role = HEROES.find((candidate) => candidate.id === heroId)?.role;
+  if (role === 'MARKSMAN') return .48;
+  if (role === 'ASSASSIN') return .58;
+  if (role === 'FIGHTER') return .68;
+  if (role === 'MAGE') return .78;
+  if (role === 'SUPPORT') return .86;
+  return .94;
+}
+
 function unit(partial: Partial<Unit> & Pick<Unit, 'id' | 'type' | 'team' | 'lane' | 'x' | 'y'>): Unit {
-  return { hp: 100, maxHp: 100, speed: 0, damage: 10, range: 60, radius: 18, color: '#fff', attackWait: 0, ...partial };
+  const created = { hp: 100, maxHp: 100, speed: 0, damage: 10, range: 60, radius: 18, color: '#fff', attackWait: 0, ...partial } as Unit;
+  created.renderX ??= created.x;
+  created.renderY ??= created.y;
+  return created;
 }
 
 function setupGame(hero: Hero, era: Era): Runtime {
   const map = MAPS[era];
   const units: Unit[] = [];
-  units.push(unit({ id: 'player', type: 'hero', team: 0, lane: 1, x: 245, y: LANE_Y[1], hp: hero.hp, maxHp: hero.hp, speed: hero.speed, damage: hero.power, range: hero.range, radius: 25, color: hero.color, heroId: hero.id, abilityPower: 1, haste: 1 }));
+  units.push(unit({ id: 'player', type: 'hero', team: 0, lane: 1, x: 390, y: LANE_Y[1], hp: hero.hp, maxHp: hero.hp, speed: hero.speed, damage: hero.power, range: hero.range, radius: 30, color: hero.color, heroId: hero.id, abilityPower: 1, haste: 1 }));
 
   const allyIds = ['briar', 'rook', 'forge', 'nyx'];
   const allyLanes: Lane[] = [0, 1, 2, 1];
   allyIds.forEach((id, index) => {
     const h = HEROES.find((candidate) => candidate.id === id)!;
     const lane = allyLanes[index];
-    units.push(unit({ id: `ally-${index}`, type: 'hero', team: 0, lane, x: 215 + (index % 2) * 42, y: LANE_Y[lane] + (index > 2 ? 34 : -22), hp: h.hp, maxHp: h.hp, speed: h.speed * .88, damage: h.power * .84, range: h.range, radius: 24, color: h.color, heroId: h.id, abilityPower: 1, haste: 1 }));
+    units.push(unit({ id: `ally-${index}`, type: 'hero', team: 0, lane, x: 360 + (index % 2) * 54, y: LANE_Y[lane] + (index > 2 ? 42 : -34), hp: h.hp, maxHp: h.hp, speed: h.speed * .88, damage: h.power * .84, range: h.range, radius: 29, color: h.color, heroId: h.id, abilityPower: 1, haste: 1 }));
   });
 
   const enemyIds = ['bastion', 'volt', 'echo', 'kestrel', 'ember'];
@@ -118,23 +151,28 @@ function setupGame(hero: Hero, era: Era): Runtime {
   enemyIds.forEach((id, index) => {
     const h = HEROES.find((candidate) => candidate.id === id)!;
     const lane = enemyLanes[index];
-    units.push(unit({ id: `enemy-${index}`, type: 'hero', team: 1, lane, x: 1385 - (index % 2) * 42, y: LANE_Y[lane] + (index > 2 ? 28 : -24), hp: h.hp, maxHp: h.hp, speed: h.speed * .86, damage: h.power * .82, range: h.range, radius: 24, color: h.color, heroId: h.id, abilityPower: 1, haste: 1 }));
+    units.push(unit({ id: `enemy-${index}`, type: 'hero', team: 1, lane, x: 2840 - (index % 2) * 54, y: LANE_Y[lane] + (index > 2 ? 42 : -34), hp: h.hp, maxHp: h.hp, speed: h.speed * .86, damage: h.power * .82, range: h.range, radius: 29, color: h.color, heroId: h.id, abilityPower: 1, haste: 1 }));
   });
 
-  units.push(unit({ id: 'core-0', type: 'core', team: 0, lane: 1, x: 88, y: 450, hp: 2600, maxHp: 2600, radius: 68, color: map.team0, damage: 78, range: 205 }));
-  units.push(unit({ id: 'core-1', type: 'core', team: 1, lane: 1, x: 1512, y: 450, hp: 2600, maxHp: 2600, radius: 68, color: map.team1, damage: 78, range: 205 }));
+  units.push(unit({ id: 'core-0', type: 'core', team: 0, lane: 1, x: 150, y: LANE_Y[1], hp: 7200, maxHp: 7200, radius: 96, color: map.team0, damage: 185, range: 500 }));
+  units.push(unit({ id: 'core-1', type: 'core', team: 1, lane: 1, x: 3050, y: LANE_Y[1], hp: 7200, maxHp: 7200, radius: 96, color: map.team1, damage: 185, range: 500 }));
 
   LANE_Y.forEach((y, laneIndex) => {
     const lane = laneIndex as Lane;
-    [390, 635].forEach((x, index) => units.push(unit({ id: `tower-0-${lane}-${index}`, type: 'tower', team: 0, lane, x, y, hp: 720, maxHp: 720, radius: 31, color: map.team0, damage: 62, range: 190 })));
-    [965, 1210].forEach((x, index) => units.push(unit({ id: `tower-1-${lane}-${index}`, type: 'tower', team: 1, lane, x, y, hp: 720, maxHp: 720, radius: 31, color: map.team1, damage: 62, range: 190 })));
+    [700, 1180].forEach((x, index) => units.push(unit({ id: `tower-0-${lane}-${index}`, type: 'tower', team: 0, lane, x, y, hp: 2400, maxHp: 2400, radius: 48, color: map.team0, damage: 138, range: 430 })));
+    [2020, 2500].forEach((x, index) => units.push(unit({ id: `tower-1-${lane}-${index}`, type: 'tower', team: 1, lane, x, y, hp: 2400, maxHp: 2400, radius: 48, color: map.team1, damage: 138, range: 430 })));
   });
 
   return {
     units,
     siegeLanes: [new Set<Lane>(), new Set<Lane>()],
-    aim: { x: 500, y: LANE_Y[1] },
-    command: { mode: 'idle', x: 245, y: LANE_Y[1], marker: 0 },
+    objectives: [
+      { id: 'north-relic', x: 1600, y: 610, owner: null, capturing: null, progress: 0 },
+      { id: 'south-relic', x: 1600, y: 1190, owner: null, capturing: null, progress: 0 },
+    ],
+    camera: { x: VIEW_WIDTH / 2, y: LANE_Y[1] },
+    aim: { x: 800, y: LANE_Y[1] },
+    command: { mode: 'idle', x: 390, y: LANE_Y[1], marker: 0 },
     attackPrimed: false,
     teamXp: [0, 0],
     teamLevel: [1, 1],
@@ -146,50 +184,54 @@ function setupGame(hero: Hero, era: Era): Runtime {
     running: true,
     paused: false,
     cooldowns: { q: 0, w: 0, e: 0, r: 0, t: 0 },
+    teamBuffUntil: [0, 0],
     outcome: '',
   };
 }
 
 function drawBox(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, depth: number, color: string) {
-  context.fillStyle = shade(color, -42);
+  const left = x - width / 2;
+  const right = x + width / 2;
+  const top = y - height / 2;
+  const bottom = y + height / 2;
+  context.fillStyle = shade(color, 24);
   context.beginPath();
-  context.moveTo(x + width / 2, y + height / 2);
-  context.lineTo(x + width / 2 + depth, y + height / 2 - depth);
-  context.lineTo(x + width / 2 + depth, y - height / 2 - depth);
-  context.lineTo(x + width / 2, y - height / 2);
+  context.moveTo(left, top);
+  context.lineTo(right, top);
+  context.lineTo(right + depth, top - depth);
+  context.lineTo(left + depth, top - depth);
   context.closePath();
   context.fill();
-  context.fillStyle = shade(color, -22);
+  context.fillStyle = shade(color, -38);
   context.beginPath();
-  context.moveTo(x - width / 2, y + height / 2);
-  context.lineTo(x - width / 2 + depth, y + height / 2 - depth);
-  context.lineTo(x + width / 2 + depth, y + height / 2 - depth);
-  context.lineTo(x + width / 2, y + height / 2);
+  context.moveTo(right, top);
+  context.lineTo(right + depth, top - depth);
+  context.lineTo(right + depth, bottom - depth);
+  context.lineTo(right, bottom);
   context.closePath();
   context.fill();
   context.fillStyle = color;
-  context.fillRect(x - width / 2, y - height / 2, width, height);
-  context.strokeStyle = '#10181066';
-  context.lineWidth = 2;
-  context.strokeRect(x - width / 2, y - height / 2, width, height);
+  context.fillRect(left, top, width, height);
+  context.strokeStyle = '#10181099';
+  context.lineWidth = 2.5;
+  context.strokeRect(left, top, width, height);
 }
 
 function drawHealth(context: CanvasRenderingContext2D, current: Unit, x: number, y: number) {
-  const width = current.type === 'core' ? 100 : current.type === 'tower' ? 64 : current.type === 'hero' ? 48 : 32;
+  const width = current.type === 'core' ? 150 : current.type === 'tower' ? 92 : current.type === 'hero' ? 58 : 40;
   context.fillStyle = '#0d120f';
-  context.fillRect(x - width / 2, y, width, 6);
+  context.fillRect(x - width / 2, y, width, 9);
   context.fillStyle = current.team === 0 ? '#51b9ff' : '#ff6558';
-  context.fillRect(x - width / 2 + 1, y + 1, (width - 2) * Math.max(0, current.hp / current.maxHp), 4);
+  context.fillRect(x - width / 2 + 2, y + 2, (width - 4) * Math.max(0, current.hp / current.maxHp), 5);
 }
 
-function drawUnit(context: CanvasRenderingContext2D, current: Unit, scaleX: number, scaleY: number, era: Era, elapsed: number) {
-  const x = current.x * scaleX;
-  const y = current.y * scaleY;
+function drawUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, elapsed: number) {
+  const x = current.renderX ?? current.x;
+  const y = current.renderY ?? current.y;
   if (current.type === 'projectile') {
-    context.fillStyle = current.color;
     context.shadowColor = current.color;
-    context.shadowBlur = 12;
-    context.fillRect(x - 5, y - 5, 10, 10);
+    context.shadowBlur = 18;
+    drawBox(context, x, y, 13, 13, 4, current.color);
     context.shadowBlur = 0;
     return;
   }
@@ -198,7 +240,7 @@ function drawUnit(context: CanvasRenderingContext2D, current: Unit, scaleX: numb
     context.strokeStyle = current.color;
     context.lineWidth = 7;
     context.beginPath();
-    context.ellipse(x, y, current.radius * scaleX, current.radius * scaleY * .65, 0, 0, Math.PI * 2);
+    context.ellipse(x, y, current.radius, current.radius * .65, 0, 0, Math.PI * 2);
     context.stroke();
     context.globalAlpha = 1;
     return;
@@ -207,75 +249,79 @@ function drawUnit(context: CanvasRenderingContext2D, current: Unit, scaleX: numb
   context.save();
   context.fillStyle = '#14201640';
   context.beginPath();
-  context.ellipse(x + 8, y + 12, current.radius * scaleX * 1.15, current.radius * scaleY * .55, 0, 0, Math.PI * 2);
+  context.ellipse(x + 10, y + 16, current.radius * 1.25, current.radius * .58, 0, 0, Math.PI * 2);
   context.fill();
 
   if (current.type === 'core') {
     if (era === 'medieval') {
-      drawBox(context, x, y - 24, 122, 88, 13, current.color);
-      [-46, 0, 46].forEach((offset) => drawBox(context, x + offset, y - 82, 31, 50, 8, current.color));
+      drawBox(context, x, y - 32, 180, 116, 22, current.color);
+      [-68, 0, 68].forEach((offset) => drawBox(context, x + offset, y - 116, 46, 76, 14, shade(current.color, offset === 0 ? 18 : -4)));
+      [-68, 0, 68].forEach((offset) => drawBox(context, x + offset, y - 166, 57, 22, 11, shade(current.color, 28)));
       context.fillStyle = '#f7df85';
-      context.font = 'bold 32px sans-serif';
+      context.font = 'bold 44px sans-serif';
       context.textAlign = 'center';
-      context.fillText('♥', x, y - 14);
+      context.fillText('♥', x, y - 30);
     } else {
-      drawBox(context, x, y - 20, 124, 76, 13, current.color);
-      drawBox(context, x, y - 77, 48, 56, 9, shade(current.color, 24));
+      drawBox(context, x, y - 25, 184, 104, 22, current.color);
+      drawBox(context, x, y - 116, 70, 82, 15, shade(current.color, 24));
       context.fillStyle = '#d3ff56';
-      context.fillRect(x - 6, y - 116, 12, 45);
+      context.fillRect(x - 8, y - 186, 16, 62);
       context.shadowColor = '#d3ff56';
       context.shadowBlur = 20;
-      context.fillRect(x - 7, y - 123, 14, 14);
+      context.fillRect(x - 11, y - 205, 22, 22);
       context.shadowBlur = 0;
     }
-    drawHealth(context, current, x, y - 132);
+    drawHealth(context, current, x, y - 222);
   } else if (current.type === 'tower') {
-    drawBox(context, x, y - 8, 48, 67, 9, current.color);
-    drawBox(context, x, y - 50, 62, 23, 9, shade(current.color, 12));
+    drawBox(context, x, y - 26, 68, 104, 15, current.color);
+    drawBox(context, x, y - 93, 88, 34, 14, shade(current.color, 12));
+    drawBox(context, x, y - 126, 38, 38, 10, shade(current.color, 28));
     if (era === 'modern') {
       context.fillStyle = '#c5f7ff';
-      context.fillRect(x - 17, y - 60, 34, 5);
+      context.fillRect(x - 27, y - 126, 54, 8);
     }
-    drawHealth(context, current, x, y - 79);
+    drawHealth(context, current, x, y - 163);
   } else if (current.type === 'siege') {
-    drawBox(context, x, y, 58, 29, 7, current.color);
-    context.fillStyle = '#1d241f';
-    context.fillRect(x - 26, y + 11, 12, 15);
-    context.fillRect(x + 16, y + 11, 12, 15);
-    context.save();
-    context.translate(x, y - 20);
-    context.rotate(current.team === 0 ? .12 : -.12);
-    context.fillStyle = era === 'medieval' ? '#5e3b24' : '#30383c';
-    context.fillRect(-5, -7, 48, 12);
-    context.restore();
-    drawHealth(context, current, x, y - 39);
+    drawBox(context, x, y, 76, 42, 10, current.color);
+    drawBox(context, x - 25, y + 28, 18, 24, 4, '#20251f');
+    drawBox(context, x + 25, y + 28, 18, 24, 4, '#20251f');
+    const direction = current.team === 0 ? 1 : -1;
+    drawBox(context, x + direction * 25, y - 31, 58, 15, 5, era === 'medieval' ? '#684228' : '#343e44');
+    drawHealth(context, current, x, y - 60);
   } else if (current.type === 'hero') {
-    const bob = Math.sin(elapsed * 5 + current.x) * 1.3;
-    drawBox(context, x, y - 12 + bob, 32, 39, 6, current.color);
-    drawBox(context, x, y - 44 + bob, 27, 25, 5, shade(current.color, 28));
+    const phase = [...current.id].reduce((total, letter) => total + letter.charCodeAt(0), 0) * .07;
+    const moving = Math.hypot(current.x - (current.renderX ?? current.x), current.y - (current.renderY ?? current.y)) > 1;
+    const bob = moving ? Math.sin(elapsed * 7 + phase) * .65 : 0;
+    drawBox(context, x - 10, y + 3 + bob, 15, 31, 4, shade(current.color, -22));
+    drawBox(context, x + 10, y + 3 - bob, 15, 31, 4, shade(current.color, -22));
+    drawBox(context, x, y - 30 + bob, 42, 48, 8, current.color);
+    drawBox(context, x - 29, y - 29 + bob, 12, 42, 4, shade(current.color, -12));
+    drawBox(context, x + 29, y - 29 + bob, 12, 42, 4, shade(current.color, -12));
+    drawBox(context, x, y - 72 + bob, 34, 33, 7, shade(current.color, 28));
     context.fillStyle = current.team === 0 ? '#bce9ff' : '#ffd0c9';
-    context.fillRect(x - 8, y - 49 + bob, 5, 5);
-    context.fillRect(x + 4, y - 49 + bob, 5, 5);
-    drawHealth(context, current, x, y - 72);
+    context.fillRect(x - 10, y - 78 + bob, 6, 6);
+    context.fillRect(x + 5, y - 78 + bob, 6, 6);
+    const direction = current.team === 0 ? 1 : -1;
+    if (current.range < 160) drawBox(context, x + direction * 38, y - 30 + bob, 9, 58, 3, era === 'medieval' ? '#ece3c2' : '#86969c');
+    else drawBox(context, x + direction * 43, y - 36 + bob, 62, 10, 4, era === 'medieval' ? '#6c452b' : '#29343b');
+    drawHealth(context, current, x, y - 105);
     if (current.id === 'player') {
       context.strokeStyle = '#d3ff56';
-      context.lineWidth = 3;
+      context.lineWidth = 4;
       context.beginPath();
-      context.ellipse(x, y + 11, 27, 13, 0, 0, Math.PI * 2);
+      context.ellipse(x, y + 22, 35, 17, 0, 0, Math.PI * 2);
       context.stroke();
     }
   } else {
-    const size = current.type === 'ranged' ? 20 : 23;
-    drawBox(context, x, y - 3, size, 27, 5, current.color);
-    drawBox(context, x, y - 26, 18, 16, 4, shade(current.color, 26));
-    if (current.type === 'ranged') {
-      context.fillStyle = '#29302a';
-      context.fillRect(x + (current.team === 0 ? 7 : -23), y - 16, 25, 6);
-    } else {
-      context.fillStyle = era === 'medieval' ? '#ece3c2' : '#29302a';
-      context.fillRect(x + (current.team === 0 ? 10 : -27), y - 19, 20, 5);
-    }
-    drawHealth(context, current, x, y - 43);
+    const size = current.type === 'ranged' ? 27 : 31;
+    drawBox(context, x - 7, y + 5, 11, 24, 3, shade(current.color, -20));
+    drawBox(context, x + 7, y + 5, 11, 24, 3, shade(current.color, -20));
+    drawBox(context, x, y - 15, size, 35, 6, current.color);
+    drawBox(context, x, y - 47, 24, 24, 5, shade(current.color, 26));
+    const direction = current.team === 0 ? 1 : -1;
+    if (current.type === 'ranged') drawBox(context, x + direction * 25, y - 23, 38, 8, 3, era === 'medieval' ? '#765035' : '#29343b');
+    else drawBox(context, x + direction * 22, y - 21, 8, 40, 3, era === 'medieval' ? '#ece3c2' : '#29343b');
+    drawHealth(context, current, x, y - 76);
   }
   context.restore();
 }
@@ -298,10 +344,14 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
     const runtime = setupGame(heroRef.current, eraRef.current);
     const map = MAPS[eraRef.current];
 
+    const viewHeight = () => VIEW_WIDTH * canvas.height / canvas.width;
+    const cameraLeft = () => runtime.camera.x - VIEW_WIDTH / 2;
+    const cameraTop = () => runtime.camera.y - viewHeight() / 2;
+
     const point = (event: MouseEvent) => {
       const bounds = canvas.getBoundingClientRect();
-      runtime.aim.x = (event.clientX - bounds.left) / bounds.width * WORLD.width;
-      runtime.aim.y = (event.clientY - bounds.top) / bounds.height * WORLD.height;
+      runtime.aim.x = Math.max(0, Math.min(WORLD.width, cameraLeft() + (event.clientX - bounds.left) / bounds.width * VIEW_WIDTH));
+      runtime.aim.y = Math.max(0, Math.min(WORLD.height, cameraTop() + (event.clientY - bounds.top) / bounds.height * viewHeight()));
     };
 
     const ring = (x: number, y: number, radius: number, color: string, team: Team = 0) => runtime.units.push(unit({ id: `fx-${Math.random()}`, type: 'effect', team, lane: 1, x, y, hp: 1, maxHp: 1, radius, color, life: .65 }));
@@ -334,7 +384,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       let bestDistance = maximum;
       for (const candidate of runtime.units) {
         if (candidate.team === source.team || candidate.dead || candidate.type === 'projectile' || candidate.type === 'effect') continue;
-        if (laneLocked && candidate.type !== 'core' && Math.abs(candidate.y - LANE_Y[source.lane]) > 125) continue;
+        if (laneLocked && candidate.type !== 'core' && Math.abs(candidate.y - LANE_Y[source.lane]) > LANE_HALF_WIDTH + 80) continue;
         const currentDistance = distance(source, candidate);
         if (currentDistance < bestDistance) {
           best = candidate;
@@ -342,6 +392,14 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         }
       }
       return best;
+    };
+
+    const trackedEnemy = (source: Unit, maximum: number, laneLocked = false) => {
+      const tracked = runtime.units.find((candidate) => candidate.id === source.targetId && !candidate.dead && candidate.team !== source.team);
+      if (tracked && distance(source, tracked) <= maximum * 1.35) return tracked;
+      const next = nearestEnemy(source, maximum, laneLocked);
+      source.targetId = next?.id;
+      return next;
     };
 
     const enemyUnderPointer = () => {
@@ -361,6 +419,8 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
     const issueCommand = (mode: CommandMode, targetId?: string) => {
       runtime.command = { mode, x: runtime.aim.x, y: runtime.aim.y, targetId, marker: .8 };
       runtime.attackPrimed = false;
+      const player = runtime.units.find((current) => current.id === 'player');
+      if (player) player.targetId = mode === 'attackTarget' ? targetId : undefined;
     };
 
     const mouseDown = (event: MouseEvent) => {
@@ -392,8 +452,8 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       const enemiesNear=(x:number,y:number,radius:number)=>runtime.units.filter((current)=>current.team===1&&!current.dead&&current.type!=='projectile'&&current.type!=='effect'&&Math.hypot(current.x-x,current.y-y)<radius);
       if (ability.effect === 'dash') {
         const leap = selectedHero.id === 'volt' ? 190 : 150;
-        player.x = Math.max(35, Math.min(1565, player.x + nx * leap));
-        player.y = Math.max(55, Math.min(845, player.y + ny * leap));
+        player.x = Math.max(40, Math.min(WORLD.width - 40, player.x + nx * leap));
+        player.y = Math.max(60, Math.min(WORLD.height - 60, player.y + ny * leap));
         enemiesNear(player.x,player.y,110).forEach((current)=>hit(current,selectedHero.power*1.55*multiplier,0));
         ring(player.x,player.y,95,selectedHero.color);
       } else if (ability.effect === 'bolt') {
@@ -433,26 +493,26 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
 
     const spawnWave = (team: Team) => {
       const direction = team === 0 ? 1 : -1;
-      const startX = team === 0 ? 155 : 1445;
+      const startX = team === 0 ? 300 : 2900;
       LANE_Y.forEach((laneY, laneIndex) => {
         const lane = laneIndex as Lane;
         const includeSiege = runtime.wave % 3 === 0 && runtime.siegeLanes[team].has(lane);
-        const types: UnitType[] = ['melee', 'melee', 'melee', 'ranged', 'ranged', ...(includeSiege ? ['siege' as UnitType] : [])];
+        const types: UnitType[] = ['melee', 'melee', 'melee', 'melee', 'ranged', 'ranged', 'ranged', ...(includeSiege ? ['siege' as UnitType] : [])];
         types.forEach((type, index) => {
-          const health = type === 'siege' ? 270 : type === 'melee' ? 130 : 96;
+          const health = type === 'siege' ? 920 : type === 'melee' ? 430 : 310;
           runtime.units.push(unit({
             id: `m-${team}-${runtime.wave}-${lane}-${index}`,
             type,
             team,
             lane,
-            x: startX - direction * index * 15,
-            y: laneY + (index % 2 === 0 ? -18 : 18),
+            x: startX - direction * index * 34,
+            y: laneY + ((index % 3) - 1) * 42,
             hp: health,
             maxHp: health,
-            speed: type === 'siege' ? 45 : 63,
-            damage: type === 'siege' ? 47 : type === 'melee' ? 22 : 28,
-            range: type === 'siege' ? 170 : type === 'melee' ? 40 : 140,
-            radius: type === 'siege' ? 27 : 14,
+            speed: type === 'siege' ? 66 : 86,
+            damage: type === 'siege' ? 54 : type === 'melee' ? 25 : 30,
+            range: type === 'siege' ? 360 : type === 'melee' ? 62 : 260,
+            radius: type === 'siege' ? 36 : 21,
             color: team === 0 ? map.team0 : map.team1,
           }));
         });
@@ -465,8 +525,8 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       const length = Math.hypot(dx, dy);
       if (length <= stoppingDistance || length < 1) return true;
       const travel = Math.min(length - stoppingDistance, current.speed * delta);
-      current.x = Math.max(28, Math.min(1572, current.x + dx / length * travel));
-      current.y = Math.max(48, Math.min(852, current.y + dy / length * travel));
+      current.x = Math.max(35, Math.min(WORLD.width - 35, current.x + dx / length * travel));
+      current.y = Math.max(55, Math.min(WORLD.height - 55, current.y + dy / length * travel));
       return false;
     };
 
@@ -478,9 +538,12 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         return;
       }
       if (source.attackWait > 0) return;
-      if (source.range > 75) spawnProjectile(runtime, source, target.x, target.y, source.damage, source.color, source.type === 'tower' ? 390 : 520);
-      else hit(target, source.damage, source.team);
-      source.attackWait = source.type === 'hero' ? .62 : source.type === 'tower' ? 1.12 : source.type === 'siege' ? 1.6 : .88;
+      const buffMultiplier = runtime.teamBuffUntil[source.team] > runtime.elapsed ? 1.2 : 1;
+      const damage = source.damage * buffMultiplier;
+      if (source.type === 'tower' || source.type === 'core' || source.type === 'ranged' || source.type === 'siege' || (source.type === 'hero' && source.range >= 160)) {
+        spawnProjectile(runtime, source, target.x, target.y, damage, source.color, source.type === 'tower' || source.type === 'core' ? 760 : 610);
+      } else hit(target, damage, source.team);
+      source.attackWait = source.type === 'hero' ? heroAttackDelay(source.heroId) : source.type === 'tower' ? .72 : source.type === 'core' ? .62 : source.type === 'siege' ? 1.65 : .92;
     };
 
     const objectiveFor = (current: Unit) => {
@@ -521,13 +584,36 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         return;
       }
       if (runtime.command.mode === 'attackMove') {
-        const target = nearestEnemy(player, Math.max(245, player.range + 80));
+        const target = trackedEnemy(player, Math.max(330, player.range + 120));
         if (target) attack(player, target, delta);
         else if (moveToward(player, runtime.command.x, runtime.command.y, delta, 5)) runtime.command.mode = 'idle';
         return;
       }
       const nearbyTarget = nearestEnemy(player, Math.max(180, player.range + 45));
       if (nearbyTarget) attack(player, nearbyTarget, delta);
+    };
+
+    const updateObjectives = (delta: number) => {
+      for (const objective of runtime.objectives) {
+        const nearby = ([0, 1] as Team[]).map((team) => runtime.units.filter((current) => current.type === 'hero' && current.team === team && !current.dead && distance(current, objective) < 112).length);
+        const capturing = nearby[0] > 0 && nearby[1] === 0 ? 0 : nearby[1] > 0 && nearby[0] === 0 ? 1 : null;
+        if (capturing === null || objective.owner === capturing) {
+          objective.capturing = null;
+          objective.progress = Math.max(0, objective.progress - delta * .7);
+          continue;
+        }
+        if (objective.capturing !== capturing) objective.progress = 0;
+        objective.capturing = capturing;
+        objective.progress += delta * (1 + Math.max(0, nearby[capturing] - 1) * .35);
+        if (objective.progress >= 3) {
+          objective.owner = capturing;
+          objective.capturing = null;
+          objective.progress = 0;
+          runtime.teamXp[capturing] += 160;
+          runtime.teamBuffUntil[capturing] = runtime.elapsed + 25;
+          ring(objective.x, objective.y, 135, capturing === 0 ? map.team0 : map.team1, capturing);
+        }
+      }
     };
 
     const update = (delta: number) => {
@@ -538,8 +624,10 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         runtime.wave++;
         spawnWave(0);
         spawnWave(1);
-        runtime.nextWave = runtime.elapsed + 8;
+        runtime.nextWave = runtime.elapsed + 15;
       }
+
+      updateObjectives(delta);
 
       const player = runtime.units.find((current) => current.id === 'player')!;
       if (!player.dead) updatePlayer(player, delta);
@@ -551,8 +639,10 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
             if (current.respawn <= 0) {
               current.dead = false;
               current.hp = current.maxHp;
-              current.x = current.team === 0 ? 215 : 1385;
+              current.x = current.team === 0 ? 350 : 2850;
               current.y = LANE_Y[current.lane];
+              current.renderX = current.x;
+              current.renderY = current.y;
               if (current.id === 'player') runtime.command.mode = 'idle';
             }
           }
@@ -584,8 +674,18 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
         }
 
         current.attackWait = Math.max(0, current.attackWait - delta);
-        const awareness = current.type === 'hero' ? 235 : 165;
-        const target = nearestEnemy(current, awareness, true);
+        const rotationPhase = Math.floor(runtime.elapsed / 20) % 3;
+        const rotator = current.type === 'hero' && (current.id === 'ally-3' || current.id === 'enemy-3');
+        if (rotator && rotationPhase === 1) {
+          const contested = runtime.objectives[(Math.floor(runtime.elapsed / 20) + current.team) % runtime.objectives.length];
+          const roamingEnemy = trackedEnemy(current, Math.max(320, current.range + 130), false);
+          if (roamingEnemy) attack(current, roamingEnemy, delta);
+          else moveToward(current, contested.x + (current.team === 0 ? -34 : 34), contested.y, delta, 58);
+          continue;
+        }
+
+        const awareness = current.type === 'hero' ? Math.max(330, current.range + 130) : 245;
+        const target = trackedEnemy(current, awareness, true);
         if (target) attack(current, target, delta);
         else {
           const objective = objectiveFor(current);
@@ -598,6 +698,11 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       }
 
       runtime.units = runtime.units.filter((current) => !current.dead || current.type === 'hero' || current.type === 'core');
+      const smoothing = 1 - Math.exp(-delta * 14);
+      runtime.units.forEach((current) => {
+        current.renderX = (current.renderX ?? current.x) + (current.x - (current.renderX ?? current.x)) * smoothing;
+        current.renderY = (current.renderY ?? current.y) + (current.y - (current.renderY ?? current.y)) * smoothing;
+      });
       levelTeam(0);
       levelTeam(1);
     };
@@ -605,82 +710,129 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
     const render = () => {
       const width = canvas.width;
       const height = canvas.height;
-      const scaleX = width / WORLD.width;
-      const scaleY = height / WORLD.height;
+      const visibleHeight = viewHeight();
+      const left = cameraLeft();
+      const top = cameraTop();
+      const scale = width / VIEW_WIDTH;
+      context.setTransform(1, 0, 0, 1, 0, 0);
       context.clearRect(0, 0, width, height);
+      context.imageSmoothingEnabled = false;
+      context.setTransform(scale, 0, 0, scale, -left * scale, -top * scale);
       context.fillStyle = map.ground;
-      context.fillRect(0, 0, width, height);
-      for (let y = 0; y < WORLD.height; y += 90) for (let x = 0; x < WORLD.width; x += 100) {
-        context.fillStyle = (x / 100 + y / 90) % 2 === 0 ? map.ground2 : map.ground;
-        context.globalAlpha = .25;
-        context.fillRect(x * scaleX, y * scaleY, 100 * scaleX, 90 * scaleY);
+      context.fillRect(0, 0, WORLD.width, WORLD.height);
+      const tile = 120;
+      const tileLeft = Math.max(0, Math.floor(left / tile) * tile);
+      const tileTop = Math.max(0, Math.floor(top / tile) * tile);
+      for (let y = tileTop; y < Math.min(WORLD.height, top + visibleHeight + tile); y += tile) for (let x = tileLeft; x < Math.min(WORLD.width, left + VIEW_WIDTH + tile); x += tile) {
+        context.fillStyle = (x / tile + y / tile) % 2 === 0 ? map.ground2 : map.ground;
+        context.globalAlpha = .18;
+        context.fillRect(x, y, tile, tile);
       }
       context.globalAlpha = 1;
 
       context.fillStyle = map.river;
-      context.fillRect(760 * scaleX, 0, 80 * scaleX, height);
+      context.fillRect(1545, 0, 110, WORLD.height);
       context.fillStyle = eraRef.current === 'medieval' ? '#6f6a54' : '#273337';
-      context.fillRect(0, 0, 175 * scaleX, height);
-      context.fillRect(1425 * scaleX, 0, 175 * scaleX, height);
+      context.fillRect(0, 0, 300, WORLD.height);
+      context.fillRect(2900, 0, 300, WORLD.height);
+
+      ROTATION_X.forEach((pathX) => {
+        context.fillStyle = shade(map.lane, -25);
+        context.fillRect(pathX - 86, LANE_Y[0] - LANE_HALF_WIDTH, 172, LANE_Y[2] - LANE_Y[0] + LANE_HALF_WIDTH * 2);
+        context.fillStyle = shade(map.lane, -8);
+        context.fillRect(pathX - 68, LANE_Y[0] - LANE_HALF_WIDTH, 136, LANE_Y[2] - LANE_Y[0] + LANE_HALF_WIDTH * 2);
+      });
 
       LANE_Y.forEach((laneY, index) => {
         context.fillStyle = shade(map.lane, -14);
-        context.fillRect(0, (laneY - 58) * scaleY, width, 116 * scaleY);
+        context.fillRect(0, laneY - LANE_HALF_WIDTH - 14, WORLD.width, (LANE_HALF_WIDTH + 14) * 2);
         context.fillStyle = map.lane;
-        context.fillRect(0, (laneY - 50) * scaleY, width, 100 * scaleY);
+        context.fillRect(0, laneY - LANE_HALF_WIDTH, WORLD.width, LANE_HALF_WIDTH * 2);
         context.fillStyle = shade(map.lane, 10);
-        context.fillRect(760 * scaleX, (laneY - 54) * scaleY, 80 * scaleX, 108 * scaleY);
+        context.fillRect(1545, laneY - LANE_HALF_WIDTH - 6, 110, LANE_HALF_WIDTH * 2 + 12);
         context.strokeStyle = eraRef.current === 'modern' ? '#d7ffff38' : '#fff3c833';
-        context.lineWidth = 2;
-        context.setLineDash(eraRef.current === 'modern' ? [18, 15] : [5, 18]);
+        context.lineWidth = 3;
+        context.setLineDash(eraRef.current === 'modern' ? [28, 24] : [8, 28]);
         context.beginPath();
-        context.moveTo(0, laneY * scaleY);
-        context.lineTo(width, laneY * scaleY);
+        context.moveTo(0, laneY);
+        context.lineTo(WORLD.width, laneY);
         context.stroke();
         context.setLineDash([]);
         context.fillStyle = '#10150f55';
-        context.font = '800 9px monospace';
+        context.font = '800 16px monospace';
         context.textAlign = 'center';
-        context.fillText(`${LANE_NAMES[index]} LANE`, 800 * scaleX, (laneY - 66) * scaleY);
+        context.fillText(`${LANE_NAMES[index]} LANE`, 1600, laneY - LANE_HALF_WIDTH - 25);
       });
 
-      const jungleY = [78, 325, 575, 826];
-      jungleY.forEach((jungleRow, row) => {
-        for (let index = 0; index < 8; index++) {
-          const worldX = 220 + ((index * 181 + row * 67) % 1160);
-          drawBox(context, worldX * scaleX, jungleRow * scaleY, 20 + index % 3 * 6, 22 + index % 2 * 8, 5, eraRef.current === 'medieval' ? (index % 3 ? '#355f37' : '#58753d') : (index % 3 ? '#263034' : '#566064'));
+      const startTreeX = Math.max(330, Math.floor(left / 150) * 150);
+      const startTreeY = Math.max(90, Math.floor(top / 150) * 150);
+      for (let treeY = startTreeY; treeY < Math.min(WORLD.height - 70, top + visibleHeight + 150); treeY += 150) for (let treeX = startTreeX; treeX < Math.min(2870, left + VIEW_WIDTH + 150); treeX += 150) {
+        const offsetX = ((treeY / 150) % 2) * 54;
+        const x = treeX + offsetX;
+        const inLane = LANE_Y.some((laneY) => Math.abs(treeY - laneY) < LANE_HALF_WIDTH + 72);
+        const inRotation = ROTATION_X.some((pathX) => Math.abs(x - pathX) < 122);
+        const nearRelic = runtime.objectives.some((objective) => Math.hypot(x - objective.x, treeY - objective.y) < 145);
+        if (inLane || inRotation || nearRelic) continue;
+        if (eraRef.current === 'medieval') {
+          drawBox(context, x, treeY + 25, 24, 62, 7, '#65452d');
+          drawBox(context, x, treeY - 25, 68, 72, 13, ((treeX + treeY) / 150) % 2 ? '#3e6d39' : '#527d42');
+        } else {
+          drawBox(context, x, treeY + 10, 58, 92, 12, ((treeX + treeY) / 150) % 2 ? '#39454a' : '#4c5b5d');
+          context.fillStyle = '#5ee6ef55';
+          context.fillRect(x - 18, treeY - 24, 36, 5);
         }
+      }
+
+      runtime.objectives.forEach((objective) => {
+        const ownerColor = objective.owner === null ? '#d9d7c5' : objective.owner === 0 ? map.team0 : map.team1;
+        const captureRatio = objective.capturing === null ? 1 : Math.min(1, objective.progress / 3);
+        context.fillStyle = '#10151080';
+        context.beginPath();
+        context.ellipse(objective.x, objective.y + 25, 86, 43, 0, 0, Math.PI * 2);
+        context.fill();
+        context.strokeStyle = ownerColor;
+        context.lineWidth = 8;
+        context.beginPath();
+        context.arc(objective.x, objective.y, 72, -.5 * Math.PI, -.5 * Math.PI + captureRatio * Math.PI * 2);
+        context.stroke();
+        drawBox(context, objective.x, objective.y - 8, 58, 48, 12, shade(ownerColor, -10));
+        drawBox(context, objective.x, objective.y - 58, 31, 42, 8, ownerColor);
+        context.fillStyle = '#eef5e9';
+        context.font = '800 13px monospace';
+        context.textAlign = 'center';
+        context.fillText('POWER RELIC', objective.x, objective.y + 103);
       });
 
-      [...runtime.units].sort((a, b) => a.y - b.y).forEach((current) => { if (!current.dead) drawUnit(context, current, scaleX, scaleY, eraRef.current, runtime.elapsed); });
+      [...runtime.units].sort((a, b) => (a.renderY ?? a.y) - (b.renderY ?? b.y)).forEach((current) => { if (!current.dead) drawUnit(context, current, eraRef.current, runtime.elapsed); });
 
       if (runtime.command.marker > 0) {
-        const x = runtime.command.x * scaleX;
-        const y = runtime.command.y * scaleY;
+        const x = runtime.command.x;
+        const y = runtime.command.y;
         context.globalAlpha = Math.min(1, runtime.command.marker * 2);
         context.strokeStyle = runtime.command.mode === 'move' ? '#d3ff56' : '#ff695c';
-        context.lineWidth = 4;
+        context.lineWidth = 6;
         context.beginPath();
-        context.ellipse(x, y, 18, 10, 0, 0, Math.PI * 2);
+        context.ellipse(x, y, 27, 14, 0, 0, Math.PI * 2);
         context.stroke();
         if (runtime.command.mode !== 'move') {
           context.beginPath();
-          context.moveTo(x - 12, y - 12);
-          context.lineTo(x + 12, y + 12);
-          context.moveTo(x + 12, y - 12);
-          context.lineTo(x - 12, y + 12);
+          context.moveTo(x - 18, y - 18);
+          context.lineTo(x + 18, y + 18);
+          context.moveTo(x + 18, y - 18);
+          context.lineTo(x - 18, y + 18);
           context.stroke();
         }
         context.globalAlpha = 1;
       }
 
       if (runtime.attackPrimed) {
-        const x = runtime.aim.x * scaleX;
-        const y = runtime.aim.y * scaleY;
+        const x = runtime.aim.x;
+        const y = runtime.aim.y;
         context.strokeStyle = '#ff695c';
-        context.lineWidth = 3;
-        context.strokeRect(x - 12, y - 12, 24, 24);
+        context.lineWidth = 4;
+        context.strokeRect(x - 18, y - 18, 36, 36);
       }
+      context.setTransform(1, 0, 0, 1, 0, 0);
     };
 
     let hudWait = 0;
@@ -688,13 +840,18 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       const delta = Math.min(.033, (now - runtime.last) / 1000);
       runtime.last = now;
       if (runtime.running && !runtime.paused) update(delta);
+      const player = runtime.units.find((current) => current.id === 'player')!;
+      const cameraTargetX = Math.max(VIEW_WIDTH / 2, Math.min(WORLD.width - VIEW_WIDTH / 2, player.renderX ?? player.x));
+      const cameraTargetY = Math.max(viewHeight() / 2, Math.min(WORLD.height - viewHeight() / 2, player.renderY ?? player.y));
+      const cameraFollow = 1 - Math.exp(-delta * 5.5);
+      runtime.camera.x += (cameraTargetX - runtime.camera.x) * cameraFollow;
+      runtime.camera.y += (cameraTargetY - runtime.camera.y) * cameraFollow;
       render();
       hudWait -= delta;
       if (hudWait <= 0) {
         hudWait = .12;
-        const player = runtime.units.find((current) => current.id === 'player')!;
         const mapUnits = runtime.units.filter((current) => !current.dead && current.type !== 'projectile' && current.type !== 'effect').map((current) => ({ id: current.id, type: current.type, team: current.team, x: current.x, y: current.y }));
-        onHud({ hp: player.hp, maxHp: player.maxHp, xp: [...runtime.teamXp] as [number, number], need: [xpNeeded(runtime.teamLevel[0]),xpNeeded(runtime.teamLevel[1])], level: [...runtime.teamLevel] as [number, number], kills: [...runtime.kills] as [number, number], time: runtime.elapsed, cooldowns: { ...runtime.cooldowns }, wave: runtime.wave, command: runtime.attackPrimed ? 'primed' : runtime.command.mode, mapUnits });
+        onHud({ hp: player.hp, maxHp: player.maxHp, xp: [...runtime.teamXp] as [number, number], need: [xpNeeded(runtime.teamLevel[0]),xpNeeded(runtime.teamLevel[1])], level: [...runtime.teamLevel] as [number, number], kills: [...runtime.kills] as [number, number], time: runtime.elapsed, cooldowns: { ...runtime.cooldowns }, wave: runtime.wave, command: runtime.attackPrimed ? 'primed' : runtime.command.mode, mapUnits, mapObjectives: runtime.objectives.map(({ id, owner, x, y }) => ({ id, owner, x, y })), camera: { ...runtime.camera }, buff: [...runtime.teamBuffUntil] as [number, number] });
       }
       if (runtime.running || runtime.outcome) requestAnimationFrame(frame);
     };
@@ -723,15 +880,17 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
   return <canvas ref={canvasRef} width={1280} height={720} className="battleCanvas" aria-label="Playable three-lane Blockbound Arena battlefield" />;
 }
 
-function Minimap({ units }: { units: MapUnit[] }) {
+function Minimap({ units, objectives, camera }: { units: MapUnit[]; objectives: MapObjective[]; camera: { x: number; y: number } }) {
   return <div className="minimap" aria-label="Battlefield minimap">
     <i className="mapRiver" />
     {LANE_Y.map((laneY) => <i key={laneY} className="mapLane" style={{ top: `${laneY / WORLD.height * 100}%` }} />)}
+    {objectives.map((objective) => <i key={objective.id} className={`mapObjective ${objective.owner === null ? 'mapNeutral' : objective.owner === 0 ? 'mapBlue' : 'mapRed'}`} style={{ left: `${objective.x / WORLD.width * 100}%`, top: `${objective.y / WORLD.height * 100}%` }} />)}
     {units.map((current) => <i
       key={current.id}
       className={`mapUnit map${current.type[0].toUpperCase()}${current.type.slice(1)} ${current.team === 0 ? 'mapBlue' : 'mapRed'} ${current.id === 'player' ? 'mapPlayer' : ''}`}
       style={{ left: `${current.x / WORLD.width * 100}%`, top: `${current.y / WORLD.height * 100}%` }}
     />)}
+    <i className="mapViewport" style={{ left: `${(camera.x - VIEW_WIDTH / 2) / WORLD.width * 100}%`, top: `${(camera.y - 450) / WORLD.height * 100}%`, width: `${VIEW_WIDTH / WORLD.width * 100}%`, height: `${900 / WORLD.height * 100}%` }} />
   </div>;
 }
 
@@ -741,7 +900,7 @@ export function Battle({ hero, era, onExit }: { hero: Hero; era: Era; onExit: ()
   const [choiceLevel,setChoiceLevel]=useState<number|null>(null);
   const [levelNotice,setLevelNotice]=useState<number|null>(null);
   const noticeTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
-  const [hud, setHud] = useState<Hud>({ hp: hero.hp, maxHp: hero.hp, xp: [0, 0], need: [xpNeeded(1),xpNeeded(1)], level: [1, 1], kills: [0, 0], time: 0, cooldowns: { q: 0, w: 0, e: 0, r: 0, t: 0 }, wave: 0, command: 'idle', mapUnits: [] });
+  const [hud, setHud] = useState<Hud>({ hp: hero.hp, maxHp: hero.hp, xp: [0, 0], need: [xpNeeded(1),xpNeeded(1)], level: [1, 1], kills: [0, 0], time: 0, cooldowns: { q: 0, w: 0, e: 0, r: 0, t: 0 }, wave: 0, command: 'idle', mapUnits: [], mapObjectives: [], camera: { x: VIEW_WIDTH / 2, y: LANE_Y[1] }, buff: [0, 0] });
   const [outcome, setOutcome] = useState<'' | 'VICTORY' | 'DEFEAT'>('');
   const [tip, setTip] = useState(true);
   const gameKey = useMemo(() => `${hero.id}-${era}`, [hero.id, era]);
@@ -781,7 +940,8 @@ export function Battle({ hero, era, onExit }: { hero: Hero; era: Era; onExit: ()
       <div className="teamXp teamXpBlue"><span><b>YOUR TEAM · LEVEL {hud.level[0]}</b><small>{Math.floor(hud.xp[0])} / {hud.need[0]} XP</small></span><i><b style={{ width: `${Math.min(100,hud.xp[0] / hud.need[0] * 100)}%` }} /></i></div>
       <div className="teamXp teamXpRed"><span><small>{Math.floor(hud.xp[1])} / {hud.need[1]} XP</small><b>ENEMY · LEVEL {hud.level[1]}</b></span><i><b style={{ width: `${Math.min(100,hud.xp[1] / hud.need[1] * 100)}%` }} /></i></div>
       <div className={`commandModeTag ${hud.command === 'primed' ? 'commandPrimed' : ''}`}>{commandLabel}</div>
-      {tip && <div className="controlTip"><button onClick={() => setTip(false)}>×</button><b><kbd>RIGHT-CLICK</kbd> TO MOVE</b><span>After arriving, you attack nearby enemies. Press <kbd>A</kbd>, then left-click to attack-move. Abilities use <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> <kbd>T</kbd>.</span></div>}
+      {hud.buff[0] > hud.time && <div className="relicBuff">POWER RELIC · +20% DAMAGE · {Math.ceil(hud.buff[0] - hud.time)}s</div>}
+      {tip && <div className="controlTip"><button onClick={() => setTip(false)}>×</button><b><kbd>RIGHT-CLICK</kbd> TO MOVE ANYWHERE</b><span>After arriving, you attack nearby enemies. Rotate through jungle paths, hold Power Relics, or press <kbd>A</kbd> then left-click to attack-move.</span></div>}
       {levelNotice!==null&&<div className={`levelNotice ${noticeIsMilestone?'specialLevel':''}`}><small>TEAM LEVEL</small><b>{levelNotice}</b><span>{noticeIsMilestone?'ABILITY CHOICE AVAILABLE':'BASE STATS INCREASED'}</span></div>}
       {choiceTier&&<div className="abilityChoicePanel"><p>LEVEL {choiceTier.level} · <kbd>{choiceTier.key.toUpperCase()}</kbd> SLOT</p><h3>CHOOSE AN ABILITY</h3><span>This choice fills the next space in your bottom ability bar.</span><div>{choiceTier.choices.map(choice=><button key={choice.name} onClick={()=>chooseAbility(choice)}><i>{choice.icon}</i><b>{choice.name}</b><small>{choice.description}</small></button>)}</div></div>}
       {outcome && <div className="outcomeOverlay"><p>{outcome === 'VICTORY' ? 'ENEMY HEART SHATTERED' : 'YOUR HEART HAS FALLEN'}</p><h2>{outcome}</h2><div><span>TEAM LEVEL <b>{hud.level[0]}</b></span><span>TAKEDOWNS <b>{hud.kills[0]}</b></span><span>TIME <b>{formatTime(hud.time)}</b></span></div><button onClick={onExit}>RETURN TO HQ</button></div>}
@@ -789,7 +949,7 @@ export function Battle({ hero, era, onExit }: { hero: Hero; era: Era; onExit: ()
     <footer className="battleHud">
       <div className="playerPanel"><HeroPortrait hero={hero} /><span><small>{hero.role}</small><b>{hero.name}</b><i><b style={{ width: `${Math.max(0, hud.hp / hud.maxHp * 100)}%` }} /></i><em>{Math.ceil(Math.max(0, hud.hp))} / {Math.ceil(hud.maxHp)}</em></span></div>
       <div className="abilities" aria-label="Ability bar">{abilityTiers.map((tier,index)=>{const selected=selectedAbilities[index],cooldown=hud.cooldowns[tier.key],locked=!selected;return <div key={tier.level} className={`${cooldown>0?'cooling':''} ${locked?'locked':''}`} aria-label={selected?`${selected.name} ability`:`Ability slot unlocks at level ${tier.level}`}><kbd>{tier.key.toUpperCase()}</kbd><i style={{'--cool':`${Math.min(100,cooldown/ABILITY_COOLDOWNS[index]*100)}%`} as React.CSSProperties}>{locked?`LVL ${tier.level}`:cooldown>0?cooldown.toFixed(1):selected.icon}</i><span>{selected?.name??'Unchosen'}</span></div>})}</div>
-      <Minimap units={hud.mapUnits} />
+      <Minimap units={hud.mapUnits} objectives={hud.mapObjectives} camera={hud.camera} />
     </footer>
   </main>;
 }

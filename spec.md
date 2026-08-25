@@ -35,7 +35,9 @@ The intended match loop is:
 - Siege access is tracked separately for each team and lane. Destroying a top-lane tower unlocks allied top-lane siege units without changing middle or bottom waves; destroying towers in additional lanes unlocks those lanes too.
 - The battlefield has three lanes: top, middle, and bottom.
 - Each side has two towers in each lane and one final heart structure.
-- Towers and hearts attack enemies in range.
+- Towers and hearts are durable, high-damage safe zones that punish unsupported dives.
+- Melee, ranged, and siege minions have enough health to sustain a lane fight rather than disappearing in one or two attacks.
+- Two Power Relics sit in the rotation space between lanes. Holding one for three uncontested seconds grants 160 shared XP and a 25-second team damage boost.
 - Heroes respawn after being defeated. Other destroyed units and structures do not respawn.
 - Destroying the enemy heart produces victory; losing the allied heart produces defeat.
 - Crownkeep and Neon Divide share gameplay geometry and balance. Their differences are visual theme and unit/structure naming.
@@ -78,7 +80,7 @@ The hero-selection screen previews the starter and both options at each later mi
 | Forge | Fighter | Hammerfall | Molten Ring / Anvil Charge | Redline / Furnace Blast | Hammerfall Barrage / Iron Tempest | Ascendant Redline / Worldbreaker |
 | Echo | Support | Soundbite | Pulse Field / Refrain | Resonance / Sonic Boom | Soundbite Barrage / Chorus Field | Ascendant Resonance / Grand Crescendo |
 
-Each hero has distinct health, speed, attack power, range, color treatment, and milestone choices. The prototype combat patterns include aimed shots, dashes, nearby fields, targeted blasts, volleys, and restorative capstone surges.
+Each hero has distinct health, speed, attack power, attack cadence, range, color treatment, and ability names. Tanks, fighters, and assassins use close-range physical basic attacks; marksmen, mages, and supports fire visible projectiles from substantially different preferred ranges. Abilities include aimed shots, dashes, nearby fields, targeted blasts, volleys, and restorative capstone surges.
 
 ## Interface rules
 
@@ -89,6 +91,7 @@ Each hero has distinct health, speed, attack power, range, color treatment, and 
 - Ordinary level-ups use a brief notice without stopping the match.
 - Ability milestones pause the match and open a compact two-choice panel immediately above the ability bar.
 - The minimap shows all three lanes plus the current positions of heroes, minions, towers, and both hearts.
+- The minimap shows both Power Relics and the camera's current viewport.
 - Battlefield units do not show nameplates; hero identity remains visible in selection and the player HUD.
 - Bars are appropriate for live, changing resources such as health and XP. This restriction applies only to static character attributes.
 - Controls and progression should be understandable without opening external documentation.
@@ -105,10 +108,14 @@ A medieval frontier with castles, guard towers, swordsmen, archers, and catapult
 
 A modern warzone with command cores, defense grids, riflemen, rocketeers, and missile carriers.
 
+Both battlegrounds use a large, camera-followed world. Lanes are long and wide, while three broad rotation roads and open jungle space allow unrestricted travel between top, middle, and bottom. Trees and industrial blocks are decorative voxel scenery, not collision walls.
+
 ## Technical constraints
 
 - React and TypeScript rendered through Vite.
 - Canvas-based match simulation with React-rendered menus and HUD.
+- Units and structures use consistent hard-edged voxel rendering with stable animation phases.
+- Simulation positions, displayed unit positions, and the player-follow camera are smoothed independently to prevent visual vibration.
 - Static output must build into `dist/` with `npm run build` and run on GitHub Pages under `/MOBA/`.
 - No backend, login, database, or mandatory third-party service.
 - Desktop keyboard and mouse are the primary supported controls for the playable match.
