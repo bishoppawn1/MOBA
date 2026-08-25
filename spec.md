@@ -30,7 +30,9 @@ The intended match loop is:
 ## Match rules
 
 - Teams contain five heroes. The human controls one allied hero; bots control the other nine heroes.
-- Minion waves spawn in all three lanes for both teams on a repeating timer. Every third wave includes a siege unit.
+- Minion waves spawn in all three lanes for both teams on a repeating timer.
+- Every third wave adds a siege unit only in lanes where that team has already destroyed an enemy tower. Before a team destroys a tower, none of its lanes receive siege units.
+- Siege access is tracked separately for each team and lane. Destroying a top-lane tower unlocks allied top-lane siege units without changing middle or bottom waves; destroying towers in additional lanes unlocks those lanes too.
 - The battlefield has three lanes: top, middle, and bottom.
 - Each side has two towers in each lane and one final heart structure.
 - Towers and hearts attack enemies in range.
@@ -121,3 +123,10 @@ A modern warzone with command cores, defense grids, riflemen, rocketeers, and mi
 - Empty-slot inputs do not consume cooldowns.
 - Ember starts with Cinder Bolt, then chooses between Flame Ring and Ash Step at level 5, Wildfire and Meteor Brand at level 10, Cinder Bolt Barrage and Firestorm at level 15, and Ascendant Wildfire and Phoenix Dawn at level 20.
 - Hero selection and the in-match HUD communicate the same slots, choices, and milestone levels.
+
+## Acceptance criteria for lane siege waves
+
+- No team spawns siege units before destroying an enemy tower.
+- If the allied team destroys an enemy top-lane tower, its next siege-eligible wave adds one allied siege unit in top and none in middle or bottom.
+- The enemy team does not gain a siege lane when an enemy tower is destroyed; each team's unlocks depend on the towers that team destroys.
+- Destroying an enemy tower in another lane adds that lane without removing previously unlocked lanes.

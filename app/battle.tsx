@@ -37,6 +37,7 @@ type Unit = {
 
 type Runtime = {
   units: Unit[];
+  siegeLanes: [Set<Lane>, Set<Lane>];
   aim: { x: number; y: number };
   command: { mode: CommandMode; x: number; y: number; targetId?: string; marker: number };
   attackPrimed: boolean;
@@ -131,6 +132,7 @@ function setupGame(hero: Hero, era: Era): Runtime {
 
   return {
     units,
+    siegeLanes: [new Set<Lane>(), new Set<Lane>()],
     aim: { x: 500, y: LANE_Y[1] },
     command: { mode: 'idle', x: 245, y: LANE_Y[1], marker: 0 },
     attackPrimed: false,
@@ -308,6 +310,7 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       if (target.dead) return;
       target.dead = true;
       target.hp = 0;
+      if (target.type === 'tower') runtime.siegeLanes[killer].add(target.lane);
       const xp = target.type === 'hero' ? 90 : target.type === 'siege' ? 35 : target.type === 'tower' ? 120 : target.type === 'core' ? 0 : 18;
       runtime.teamXp[killer] += xp;
       if (target.type === 'hero') {
@@ -431,10 +434,10 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
     const spawnWave = (team: Team) => {
       const direction = team === 0 ? 1 : -1;
       const startX = team === 0 ? 155 : 1445;
-      const includeSiege = runtime.wave % 3 === 0;
-      const types: UnitType[] = ['melee', 'melee', 'melee', 'ranged', 'ranged', ...(includeSiege ? ['siege' as UnitType] : [])];
       LANE_Y.forEach((laneY, laneIndex) => {
         const lane = laneIndex as Lane;
+        const includeSiege = runtime.wave % 3 === 0 && runtime.siegeLanes[team].has(lane);
+        const types: UnitType[] = ['melee', 'melee', 'melee', 'ranged', 'ranged', ...(includeSiege ? ['siege' as UnitType] : [])];
         types.forEach((type, index) => {
           const health = type === 'siege' ? 270 : type === 'melee' ? 130 : 96;
           runtime.units.push(unit({
