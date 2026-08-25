@@ -8,8 +8,9 @@ type Role = 'TANK' | 'ASSASSIN' | 'MAGE' | 'SUPPORT' | 'MARKSMAN' | 'FIGHTER';
 type Upgrade = { name: string; description: string; kind: 'power' | 'health' | 'speed' | 'haste' | 'ability' };
 export type AbilityKey = 'q'|'w'|'e'|'r'|'t';
 export type AbilityKind = 'active'|'passive'|'summon'|'stat';
+export type SummonStyle = 'guardian'|'drone'|'rift'|'ward'|'turret';
 export type AbilityEffect = 'bolt'|'dash'|'nova'|'blast'|'volley'|'rapid'|'novaStrong'|'blastStrong'|'surge'|'reinforce'|'summon'|'tempo'|'reflow';
-export type AbilityOption = { name:string; description:string; effect:AbilityEffect; icon:string; kind:AbilityKind };
+export type AbilityOption = { name:string; description:string; effect:AbilityEffect; icon:string; kind:AbilityKind; summonStyle?:SummonStyle };
 export type AbilityTier = { level:1|5|10|15|20; key:AbilityKey; choices:AbilityOption[] };
 export const ABILITY_BAR_KEYS:AbilityKey[] = ['q','w','e','r','t'];
 export const ABILITY_MILESTONES = [1,5,10,15,20] as const;
@@ -65,8 +66,22 @@ export const HEROES: Hero[] = [
     upgrades:[{name:'Feedback',description:'+26% ability power',kind:'ability'},{name:'Fast Tempo',description:'+18% movement speed',kind:'speed'},{name:'Endless Chorus',description:'+220 maximum health',kind:'health'}]},
 ];
 
+const HERO_SUMMONS:Record<string,{name:string;description:string;icon:string;style:SummonStyle}> = {
+  bastion:{name:'Rampart Sentinel',description:'Call a shield construct that follows you and intercepts nearby enemies.',icon:'▰',style:'guardian'},
+  volt:{name:'Arc Drones',description:'Deploy two orbiting drones that follow you and fire at nearby enemies.',icon:'⌁',style:'drone'},
+  nyx:{name:'Void Anchor',description:'Place a stationary rift that repeatedly damages enemies around it.',icon:'◈',style:'rift'},
+  briar:{name:'Bloom Totem',description:'Plant a stationary totem that repeatedly heals nearby allied heroes.',icon:'♣',style:'ward'},
+  rook:{name:'Deadeye Turret',description:'Deploy a stationary long-range turret at the cursor.',icon:'⌖',style:'turret'},
+  ember:{name:'Cinder Wisps',description:'Conjure two orbiting fire wisps that follow you and launch embers.',icon:'♨',style:'drone'},
+  tide:{name:'Tidal Ward',description:'Raise a stationary ward that repeatedly restores nearby allied heroes.',icon:'♒',style:'ward'},
+  kestrel:{name:'Razor Flock',description:'Release two orbiting blade drones that follow you and strike nearby enemies.',icon:'⌁',style:'drone'},
+  forge:{name:'Anvil Sentry',description:'Build a stationary armored turret that fires heavy voxel rounds.',icon:'⚒',style:'turret'},
+  echo:{name:'Resonance Beacon',description:'Place a stationary beacon that sends healing pulses through nearby allies.',icon:'◌',style:'ward'},
+};
+
 export function getAbilityTiers(hero:Hero):AbilityTier[] {
   const starterEffect:AbilityEffect=['bastion','volt','tide','kestrel','forge'].includes(hero.id)?'dash':'bolt';
+  const summon=HERO_SUMMONS[hero.id] ?? HERO_SUMMONS.bastion;
   return [
     {level:1,key:'q',choices:[{name:hero.abilities[0],description:hero.abilityNotes[0],effect:starterEffect,icon:'◆',kind:'active'}]},
     {level:5,key:'w',choices:[
@@ -77,7 +92,7 @@ export function getAbilityTiers(hero:Hero):AbilityTier[] {
     {level:10,key:'e',choices:[
       {name:hero.abilities[2],description:hero.abilityNotes[2],effect:'blast',icon:'✹',kind:'active'},
       {name:hero.abilityBranches[1],description:'Launch a wide five-shot volley toward the cursor.',effect:'volley',icon:'⋰',kind:'active'},
-      {name:`${hero.name} Vanguard`,description:'Summon two temporary voxel escorts at the cursor.',effect:'summon',icon:'♟',kind:'summon'},
+      {name:summon.name,description:summon.description,effect:'summon',icon:summon.icon,kind:'summon',summonStyle:summon.style},
     ]},
     {level:15,key:'r',choices:[
       {name:`${hero.abilities[0]} Barrage`,description:'Rapidly fire seven empowered shots in a tight spread.',effect:'rapid',icon:'✧',kind:'active'},

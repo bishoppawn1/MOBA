@@ -45,12 +45,13 @@ The intended match loop is:
 - Towers and hearts are durable, high-damage safe zones that punish unsupported dives.
 - Heroes, towers, hearts, and lane minions acquire opponents by physical proximity regardless of which lane label the opponent last followed. Minions use their lane path only while marching; a nearby enemy hero takes combat priority, and minions may leave the road to pursue until that hero exits their awareness radius.
 - Melee, ranged, and siege minions have enough health to sustain a lane fight rather than disappearing in one or two attacks.
-- Two Power Relics sit in the rotation space between lanes. Holding one for three uncontested seconds grants 160 shared XP and a 25-second team damage boost.
+- The battlefield has no Power Relics or stand-and-hold capture objectives; bots never leave their lane logic to idle on one.
 - Four gold mercenary camps sit in the jungle between lanes. Neutral mercenaries fight heroes inside their visible camp boundary, stop chasing when a hero leaves it, return home, and recover health.
-- Clearing every mercenary in a camp recruits the full squad for the team that lands the final takedown. The captured squad marches down the nearest lane toward enemy units and structures until defeated, then the camp returns as neutral after 35 seconds.
+- Defeating a neutral mercenary immediately revives that individual at full health for the defeating team. Recruited mercenaries leave the camp, march down the nearest lane, and attack enemy units and structures.
+- A camp can be recruited one mercenary at a time. After all three have been recruited and subsequently defeated, the camp returns as a neutral group after 35 seconds.
 - Trees in Crownkeep and industrial blocks in Neon Divide are solid terrain. Heroes and lane units slide around their collision boundaries while the marked lane and rotation corridors remain open.
 - Targeted basic attacks, including shots from ranged heroes, minions, towers, and hearts, track their chosen target until impact and cannot miss because that target moved. Aimed abilities remain skill shots.
-- Heroes respawn after being defeated. Lane units and structures do not respawn; cleared mercenary camps follow their separate 35-second return timer after the captured squad is destroyed.
+- Heroes respawn after being defeated. Lane units and structures do not respawn; a mercenary camp follows its separate 35-second return timer after all three recruited contracts are destroyed.
 - Destroying the enemy heart produces victory; losing the allied heart produces defeat.
 - Crownkeep and Neon Divide share gameplay geometry and balance. Their differences are visual theme and unit/structure naming.
 
@@ -63,7 +64,8 @@ The intended match loop is:
 - Ordinary level growth never improves health regeneration, cooldown recovery, or any other resource-regeneration speed. Those effects are reserved for explicit special milestone rewards.
 - Ordinary levels show a brief, non-blocking on-screen notice and do not interrupt play.
 - Ability milestones at levels 5, 10, 15, and 20 keep the match running and present three choices for the newly opened slot.
-- Milestone pools mix castable abilities, permanent passive effects, direct stat rewards, and summon abilities. A castable summon creates two temporary voxel escorts; passive and stat rewards apply immediately and cannot be cast.
+- Milestone pools mix castable abilities, permanent passive effects, direct stat rewards, and summon abilities. Passive and stat rewards apply immediately and cannot be cast.
+- Each hero has exactly one summon choice, offered only at level 10. Summons are hero-specific constructs rather than lane minions: they may follow and guard the hero, orbit and fire, create a stationary damage rift, heal from a ward, or act as a stationary turret.
 - Cooldown recovery may appear only as a special milestone option, such as the level-20 Perfect Cycle capstone. It is never part of automatic level growth.
 - The level-1 starter is fixed. Each later choice is permanent for that match and fills the corresponding empty slot in the bottom ability bar.
 - Milestone prompts are queued if the player leaves an earlier choice open while the match continues.
@@ -80,7 +82,7 @@ The intended match loop is:
 | --- | --- | --- |
 | 1 | `Q` | Fixed starter ability |
 | 5 | `W` | Choose one of three rewards: two hero abilities or Reinforced Core (stat) |
-| 10 | `E` | Choose one of three rewards: two hero abilities or a hero-themed Vanguard summon |
+| 10 | `E` | Choose one of three rewards: two hero abilities or the hero's single summon choice |
 | 15 | `R` | Choose one of three rewards: two mastery abilities or Predator Rhythm (passive) |
 | 20 | `T` | Choose one of three rewards: two capstone abilities or Perfect Cycle (special passive) |
 
@@ -90,16 +92,16 @@ The hero-selection screen previews the starter and all three options at each lat
 
 | Hero | Role | Level 1 starter | Level 5 choices | Level 10 choices | Level 15 choices | Level 20 choices |
 | --- | --- | --- | --- | --- | --- | --- |
-| Bastion | Tank | Shield Rush | Fault Line / Bulwark Slam / Reinforced Core | Citadel / Rampart March / Bastion Vanguard | Shield Rush Barrage / Iron Dominion / Predator Rhythm | Ascendant Citadel / Last Bastion / Perfect Cycle |
-| Volt | Assassin | Arc Blink | Static Fan / Lightning Step / Reinforced Core | Overcharge / Chain Storm / Volt Vanguard | Arc Blink Barrage / Flashpoint / Predator Rhythm | Ascendant Overcharge / Absolute Voltage / Perfect Cycle |
-| Nyx | Mage | Void Lance | Gravity Well / Phase Rift / Reinforced Core | Black Star / Umbral Cascade / Nyx Vanguard | Void Lance Barrage / Event Horizon / Predator Rhythm | Ascendant Black Star / Endless Night / Perfect Cycle |
-| Briar | Support | Seedshot | Bramble Ring / Vinewalk / Reinforced Core | Verdant Dawn / Thornwake / Briar Vanguard | Seedshot Barrage / Ancient Grove / Predator Rhythm | Ascendant Verdant Dawn / Worldroot / Perfect Cycle |
-| Rook | Marksman | Longshot | Combat Roll / Quickdraw / Reinforced Core | Full Salvo / Ricochet / Rook Vanguard | Longshot Barrage / Kill Zone / Predator Rhythm | Ascendant Full Salvo / Deadeye Protocol / Perfect Cycle |
-| Ember | Mage | Cinder Bolt | Flame Ring / Ash Step / Reinforced Core | Wildfire / Meteor Brand / Ember Vanguard | Cinder Bolt Barrage / Firestorm / Predator Rhythm | Ascendant Wildfire / Phoenix Dawn / Perfect Cycle |
-| Tide | Tank | Riptide | Undertow / Breakwater / Reinforced Core | Maelstrom / Tidal Surge / Tide Vanguard | Riptide Barrage / Drowning Field / Predator Rhythm | Ascendant Maelstrom / Leviathan / Perfect Cycle |
-| Kestrel | Assassin | Vault | Blade Fan / Windstep / Reinforced Core | Final Flight / Razor Cyclone / Kestrel Vanguard | Vault Barrage / Skyfall / Predator Rhythm | Ascendant Final Flight / Apex Predator / Perfect Cycle |
-| Forge | Fighter | Hammerfall | Molten Ring / Anvil Charge / Reinforced Core | Redline / Furnace Blast / Forge Vanguard | Hammerfall Barrage / Iron Tempest / Predator Rhythm | Ascendant Redline / Worldbreaker / Perfect Cycle |
-| Echo | Support | Soundbite | Pulse Field / Refrain / Reinforced Core | Resonance / Sonic Boom / Echo Vanguard | Soundbite Barrage / Chorus Field / Predator Rhythm | Ascendant Resonance / Grand Crescendo / Perfect Cycle |
+| Bastion | Tank | Shield Rush | Fault Line / Bulwark Slam / Reinforced Core | Citadel / Rampart March / Rampart Sentinel | Shield Rush Barrage / Iron Dominion / Predator Rhythm | Ascendant Citadel / Last Bastion / Perfect Cycle |
+| Volt | Assassin | Arc Blink | Static Fan / Lightning Step / Reinforced Core | Overcharge / Chain Storm / Arc Drones | Arc Blink Barrage / Flashpoint / Predator Rhythm | Ascendant Overcharge / Absolute Voltage / Perfect Cycle |
+| Nyx | Mage | Void Lance | Gravity Well / Phase Rift / Reinforced Core | Black Star / Umbral Cascade / Void Anchor | Void Lance Barrage / Event Horizon / Predator Rhythm | Ascendant Black Star / Endless Night / Perfect Cycle |
+| Briar | Support | Seedshot | Bramble Ring / Vinewalk / Reinforced Core | Verdant Dawn / Thornwake / Bloom Totem | Seedshot Barrage / Ancient Grove / Predator Rhythm | Ascendant Verdant Dawn / Worldroot / Perfect Cycle |
+| Rook | Marksman | Longshot | Combat Roll / Quickdraw / Reinforced Core | Full Salvo / Ricochet / Deadeye Turret | Longshot Barrage / Kill Zone / Predator Rhythm | Ascendant Full Salvo / Deadeye Protocol / Perfect Cycle |
+| Ember | Mage | Cinder Bolt | Flame Ring / Ash Step / Reinforced Core | Wildfire / Meteor Brand / Cinder Wisps | Cinder Bolt Barrage / Firestorm / Predator Rhythm | Ascendant Wildfire / Phoenix Dawn / Perfect Cycle |
+| Tide | Tank | Riptide | Undertow / Breakwater / Reinforced Core | Maelstrom / Tidal Surge / Tidal Ward | Riptide Barrage / Drowning Field / Predator Rhythm | Ascendant Maelstrom / Leviathan / Perfect Cycle |
+| Kestrel | Assassin | Vault | Blade Fan / Windstep / Reinforced Core | Final Flight / Razor Cyclone / Razor Flock | Vault Barrage / Skyfall / Predator Rhythm | Ascendant Final Flight / Apex Predator / Perfect Cycle |
+| Forge | Fighter | Hammerfall | Molten Ring / Anvil Charge / Reinforced Core | Redline / Furnace Blast / Anvil Sentry | Hammerfall Barrage / Iron Tempest / Predator Rhythm | Ascendant Redline / Worldbreaker / Perfect Cycle |
+| Echo | Support | Soundbite | Pulse Field / Refrain / Reinforced Core | Resonance / Sonic Boom / Resonance Beacon | Soundbite Barrage / Chorus Field / Predator Rhythm | Ascendant Resonance / Grand Crescendo / Perfect Cycle |
 
 Each hero has distinct health, speed, attack power, attack cadence, range, color treatment, and ability names. Tanks, fighters, and assassins use close-range physical basic attacks; marksmen, mages, and supports fire visible projectiles from substantially different preferred ranges. Abilities include aimed shots, dashes, nearby fields, targeted blasts, volleys, and restorative capstone surges.
 
@@ -114,7 +116,7 @@ Each hero has distinct health, speed, attack power, attack cadence, range, color
 - Ability milestones keep the match live and open a compact three-choice panel immediately above the ability bar.
 - Each choice identifies itself as active, passive, summon, or stat, and learned passives remain visibly marked in their ability-bar slot.
 - The minimap shows all three lanes plus the current positions of heroes, minions, mercenaries, towers, and both hearts.
-- The minimap shows both Power Relics and the camera's current viewport.
+- The minimap shows the camera's current viewport.
 - The mouse wheel and visible `+`/`−` buttons zoom the camera between a useful close view and a broad battlefield view; the minimap viewport updates with the zoom level.
 - The battlefield and minimap both show all three lane paths meeting at each castle.
 - The minimap marks all four mercenary camp sites, their current team color, and whether they are waiting to respawn.
@@ -158,6 +160,8 @@ Both battlegrounds use the same 4800×2700 camera-followed world. Lanes are long
 - Ordinary levels show a non-blocking notice and do not pause play.
 - Levels 5, 10, 15, and 20 keep play running and present three choices for the new slot.
 - Each milestone offers a mixture of hero actions and a stat, summon, or passive alternative as defined in the cadence table.
+- A hero has no more than one summon option in a match, and that option appears only at level 10.
+- Hero summons use their documented follow, orbit, rift, ward, or turret behavior and never join the normal lane-marching AI.
 - Choosing a reward closes the current panel and fills its slot; the match never needs to resume because it never pauses.
 - Direct stat and passive choices apply once, stay visible in the ability bar, and cannot be activated or consume cooldowns.
 - Automatic level growth increases health, damage, movement speed, armor, and sometimes attack speed without changing regeneration or cooldown recovery.
@@ -168,7 +172,7 @@ Both battlegrounds use the same 4800×2700 camera-followed world. Lanes are long
 - A dash aimed inside its maximum range ends at the green pointer marker; a dash aimed beyond maximum range ends where that marker is clamped to the red boundary.
 - Right-clicking while an ability is armed moves the hero while keeping the ability armed, and the preview updates from the hero's new position.
 - `Escape`, `A`, or pressing the armed ability key again cancels targeting without consuming a cooldown.
-- Ember starts with Cinder Bolt, then gains a third alternative alongside Flame Ring/Ash Step at level 5, Wildfire/Meteor Brand at level 10, Cinder Bolt Barrage/Firestorm at level 15, and Ascendant Wildfire/Phoenix Dawn at level 20.
+- Ember starts with Cinder Bolt, then gains a third alternative alongside Flame Ring/Ash Step at level 5, Wildfire/Meteor Brand/Cinder Wisps at level 10, Cinder Bolt Barrage/Firestorm at level 15, and Ascendant Wildfire/Phoenix Dawn at level 20.
 - Hero selection and the in-match HUD communicate the same slots, choices, and milestone levels.
 
 ## Acceptance criteria for zoom and projectiles
@@ -213,8 +217,9 @@ Both battlegrounds use the same 4800×2700 camera-followed world. Lanes are long
 
 ## Acceptance criteria for mercenary camps
 
+- No Power Relic model, capture ring, minimap marker, buff banner, or relic-seeking bot behavior remains in a match.
 - Four neutral camps appear in the jungle and remain visible on the battlefield and minimap.
 - Neutral mercenaries engage heroes inside their camp boundary but do not chase beyond it; disengaged mercenaries return home and recover.
-- Defeating only part of a camp does not recruit it. Defeating the entire camp immediately restores that squad as units belonging to the team that lands the final takedown.
-- Captured mercenaries leave their camp, join the nearest lane, and attack enemy units and structures without attacking other neutral camps.
-- After every captured mercenary in a squad is defeated, its camp shows a 35-second return timer and then respawns as neutral.
+- Each neutral mercenary immediately revives for the team that defeats it; recruitment does not wait for the rest of the camp.
+- Recruited mercenaries leave their camp, join the nearest lane, and attack enemy units and structures without attacking remaining neutral mercenaries.
+- After all three mercenaries from a camp have been recruited and then defeated, the camp shows a 35-second return timer and respawns all three as neutral.
