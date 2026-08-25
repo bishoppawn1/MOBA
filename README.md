@@ -9,7 +9,7 @@ A playable block-forged MOBA prototype featuring ten heroes, medieval and modern
 - Move: right-click the ground
 - Attack-move: press `A`, then left-click the ground
 - Focus an enemy: press `A`, then left-click that enemy
-- Basic attacks fire automatically while attack-moving or focusing a target
+- Basic attacks fire automatically while attack-moving, focusing a target, or standing near an enemy after moving
 - Ability bar: `Q`, `W`, `E`, `R`, and `T`
 
 Heroes begin with one starter ability. At team levels 5, 10, 15, and 20, play pauses briefly so you can choose one of two hero-specific abilities for the next slot.

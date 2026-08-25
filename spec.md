@@ -24,7 +24,7 @@ The intended match loop is:
 | Move | Right-click the ground |
 | Attack-move | Press `A`, then left-click the ground |
 | Focus attack | Press `A`, then left-click an enemy |
-| Basic attack | Automatic while attack-moving or focusing a target |
+| Basic attack | Automatic while attack-moving, focusing a target, or idle near an enemy |
 | Ability slots | `Q`, `W`, `E`, `R`, `T` |
 
 ## Match rules
@@ -90,6 +90,8 @@ Each hero has distinct health, speed, attack power, range, color treatment, and 
 - Battlefield units do not show nameplates; hero identity remains visible in selection and the player HUD.
 - Bars are appropriate for live, changing resources such as health and XP. This restriction applies only to static character attributes.
 - Controls and progression should be understandable without opening external documentation.
+
+After completing a normal right-click move, the player returns to an idle combat stance and automatically acquires nearby enemies. The move command itself remains uninterrupted, so passing enemies do not pull the hero away before the destination is reached.
 
 ## Battlegrounds
 
