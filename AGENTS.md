@@ -13,9 +13,10 @@ These instructions apply to the entire repository.
 1. Start with `git status` and inspect the relevant files before editing.
 2. Preserve user-authored and unrelated changes. Stage only files that belong to the current task.
 3. Keep the game playable in a static Vite build; do not add a server requirement without explicit approval.
-4. Prefer small, typed changes and reuse existing components and styles.
-5. Run `npm run build` after code changes. Add focused checks when a mechanic needs more verification.
-6. Review the final diff for accidental generated files, secrets, or unrelated changes.
+4. Keep match simulation and the live HUD in `app/battle.tsx`; keep hero definitions, ability progression data, and hero selection in `app/game.tsx`.
+5. Prefer small, typed changes and reuse existing components and styles.
+6. Run `npm run build` after code changes. Add focused checks when a mechanic needs more verification.
+7. Review the final diff for accidental generated files, secrets, or unrelated changes.
 
 ## GitHub delivery
 

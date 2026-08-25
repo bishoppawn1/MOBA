@@ -1,13 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Era, HEROES, Hero, HeroPortrait } from './game';
+import { ABILITY_BAR_KEYS, ABILITY_MILESTONES, AbilityKey, AbilityOption, Era, getAbilityTiers, HEROES, Hero, HeroPortrait } from './game';
 
 type Team = 0 | 1;
 type Lane = 0 | 1 | 2;
 type UnitType = 'hero' | 'melee' | 'ranged' | 'siege' | 'tower' | 'core' | 'projectile' | 'effect';
 type CommandMode = 'idle' | 'move' | 'attackMove' | 'attackTarget';
-type Upgrade = Hero['upgrades'][number];
+type AbilityLoadout = Array<AbilityOption|null>;
 
 type Unit = {
   id: string;
@@ -49,7 +49,7 @@ type Runtime = {
   last: number;
   running: boolean;
   paused: boolean;
-  cooldowns: { q: number; e: number; r: number };
+  cooldowns: Record<AbilityKey,number>;
   outcome: '' | 'VICTORY' | 'DEFEAT';
 };
 
@@ -62,7 +62,7 @@ type Hud = {
   level: [number, number];
   kills: [number, number];
   time: number;
-  cooldowns: { q: number; e: number; r: number };
+  cooldowns: Record<AbilityKey,number>;
   wave: number;
   command: CommandMode | 'primed';
   mapUnits: MapUnit[];
@@ -71,7 +71,8 @@ type Hud = {
 const WORLD = { width: 1600, height: 900 };
 const LANE_Y: [number, number, number] = [205, 450, 695];
 const LANE_NAMES = ['TOP', 'MIDDLE', 'BOTTOM'];
-const ABILITY_UNLOCK_LEVEL = { q: 1, e: 3, r: 5 } as const;
+const ABILITY_COOLDOWNS = [5,8,12,18,28];
+const xpNeeded = (level:number)=>200+level*60;
 
 const MAPS = {
   medieval: { name: 'CROWNKEEP', sub: 'MEDIEVAL FRONTIER', ground: '#667e42', ground2: '#7e9250', lane: '#b5a272', river: '#4c91a5', team0: '#3e8fdb', team1: '#da5947' },
@@ -142,7 +143,7 @@ function setupGame(hero: Hero, era: Era): Runtime {
     last: performance.now(),
     running: true,
     paused: false,
-    cooldowns: { q: 0, e: 0, r: 0 },
+    cooldowns: { q: 0, w: 0, e: 0, r: 0, t: 0 },
     outcome: '',
   };
 }
@@ -282,10 +283,12 @@ function spawnProjectile(runtime: Runtime, source: Unit, targetX: number, target
   runtime.units.push(unit({ id: `p-${Math.random()}`, type: 'projectile', team: source.team, lane: source.lane, x: source.x, y: source.y - 8, hp: 1, maxHp: 1, speed, damage, range: 0, radius: 7, color, vx: (targetX - source.x) / length * speed, vy: (targetY - source.y) / length * speed, life: 1.5 }));
 }
 
-function BattleCanvas({ hero, era, onUpgrade, onOutcome, onHud }: { hero: Hero; era: Era; onUpgrade: () => void; onOutcome: (outcome: 'VICTORY' | 'DEFEAT') => void; onHud: (hud: Hud) => void }) {
+function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHud }: { hero: Hero; era: Era; selectedAbilities: AbilityLoadout; onLevelUp: (level:number) => void; onOutcome: (outcome: 'VICTORY' | 'DEFEAT') => void; onHud: (hud: Hud) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const heroRef = useRef(hero);
   const eraRef = useRef(era);
+  const selectedAbilitiesRef = useRef(selectedAbilities);
+  selectedAbilitiesRef.current = selectedAbilities;
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -370,9 +373,11 @@ function BattleCanvas({ hero, era, onUpgrade, onOutcome, onHud }: { hero: Hero; 
       }
     };
 
-    const cast = (key: 'q' | 'e' | 'r') => {
+    const cast = (key: AbilityKey) => {
       const player = runtime.units.find((current) => current.id === 'player');
-      if (!player || player.dead || runtime.cooldowns[key] > 0 || runtime.outcome || runtime.teamLevel[0] < ABILITY_UNLOCK_LEVEL[key]) return;
+      const abilityIndex = ABILITY_BAR_KEYS.indexOf(key);
+      const ability = selectedAbilitiesRef.current[abilityIndex];
+      if (!player || player.dead || !ability || runtime.cooldowns[key] > 0 || runtime.outcome) return;
       const selectedHero = heroRef.current;
       const multiplier = player.abilityPower || 1;
       const dx = runtime.aim.x - player.x;
@@ -380,39 +385,47 @@ function BattleCanvas({ hero, era, onUpgrade, onOutcome, onHud }: { hero: Hero; 
       const length = Math.max(1, Math.hypot(dx, dy));
       const nx = dx / length;
       const ny = dy / length;
-      if (key === 'q') {
-        runtime.cooldowns.q = 5 / (player.haste || 1);
-        if (['bastion', 'volt', 'tide', 'kestrel', 'forge'].includes(selectedHero.id)) {
-          const leap = selectedHero.id === 'volt' ? 185 : 130;
-          player.x = Math.max(35, Math.min(1565, player.x + nx * leap));
-          player.y = Math.max(55, Math.min(845, player.y + ny * leap));
-          runtime.units.filter((current) => current.team === 1 && !current.dead && current.type !== 'projectile' && current.type !== 'effect' && distance(current, player) < 105).forEach((current) => hit(current, selectedHero.power * 1.5 * multiplier, 0));
-          ring(player.x, player.y, 90, selectedHero.color);
-        } else {
-          for (let index = -1; index <= 1; index++) {
-            const angle = Math.atan2(dy, dx) + index * (selectedHero.id === 'rook' ? 0 : .11);
-            spawnProjectile(runtime, player, player.x + Math.cos(angle) * 500, player.y + Math.sin(angle) * 500, selectedHero.power * 1.7 * multiplier, selectedHero.color, 700);
-          }
+      runtime.cooldowns[key] = ABILITY_COOLDOWNS[abilityIndex] / (player.haste || 1);
+      const enemiesNear=(x:number,y:number,radius:number)=>runtime.units.filter((current)=>current.team===1&&!current.dead&&current.type!=='projectile'&&current.type!=='effect'&&Math.hypot(current.x-x,current.y-y)<radius);
+      if (ability.effect === 'dash') {
+        const leap = selectedHero.id === 'volt' ? 190 : 150;
+        player.x = Math.max(35, Math.min(1565, player.x + nx * leap));
+        player.y = Math.max(55, Math.min(845, player.y + ny * leap));
+        enemiesNear(player.x,player.y,110).forEach((current)=>hit(current,selectedHero.power*1.55*multiplier,0));
+        ring(player.x,player.y,95,selectedHero.color);
+      } else if (ability.effect === 'bolt') {
+        for(let index=-1;index<=1;index++){
+          const angle=Math.atan2(dy,dx)+index*(selectedHero.id==='rook'?0:.11);
+          spawnProjectile(runtime,player,player.x+Math.cos(angle)*520,player.y+Math.sin(angle)*520,selectedHero.power*1.7*multiplier,selectedHero.color,700);
         }
-      } else if (key === 'e') {
-        runtime.cooldowns.e = 8 / (player.haste || 1);
-        ring(player.x, player.y, 145, selectedHero.color);
+      } else if (ability.effect === 'nova' || ability.effect === 'novaStrong') {
+        const radius=ability.effect==='novaStrong'?215:150,damage=ability.effect==='novaStrong'?2.15:1.3;
+        ring(player.x,player.y,radius,selectedHero.color);
         if (['briar', 'echo'].includes(selectedHero.id)) runtime.units.filter((current) => current.type === 'hero' && current.team === 0 && distance(current, player) < 170).forEach((current) => { current.hp = Math.min(current.maxHp, current.hp + 150 * multiplier); });
-        runtime.units.filter((current) => current.team === 1 && !current.dead && current.type !== 'projectile' && current.type !== 'effect' && distance(current, player) < 155).forEach((current) => hit(current, selectedHero.power * 1.25 * multiplier, 0));
-      } else {
-        runtime.cooldowns.r = 24 / (player.haste || 1);
-        ring(runtime.aim.x, runtime.aim.y, 230, selectedHero.accent);
-        runtime.units.filter((current) => current.team === 1 && !current.dead && current.type !== 'projectile' && current.type !== 'effect' && Math.hypot(current.x - runtime.aim.x, current.y - runtime.aim.y) < 240).forEach((current) => hit(current, selectedHero.power * 3.1 * multiplier, 0));
-        if (['briar', 'echo', 'bastion'].includes(selectedHero.id)) runtime.units.filter((current) => current.type === 'hero' && current.team === 0).forEach((current) => { current.hp = Math.min(current.maxHp, current.hp + current.maxHp * .32); });
+        enemiesNear(player.x,player.y,radius+10).forEach((current)=>hit(current,selectedHero.power*damage*multiplier,0));
+      } else if (ability.effect === 'blast' || ability.effect === 'blastStrong') {
+        const radius=ability.effect==='blastStrong'?310:235,damage=ability.effect==='blastStrong'?4.25:3.1;
+        ring(runtime.aim.x,runtime.aim.y,radius,selectedHero.accent);
+        enemiesNear(runtime.aim.x,runtime.aim.y,radius+10).forEach((current)=>hit(current,selectedHero.power*damage*multiplier,0));
+      } else if (ability.effect === 'volley' || ability.effect === 'rapid') {
+        const count=ability.effect==='rapid'?7:5,step=ability.effect==='rapid'?.055:.095,damage=ability.effect==='rapid'?.92:1.18;
+        for(let index=0;index<count;index++){
+          const angle=Math.atan2(dy,dx)+(index-(count-1)/2)*step;
+          spawnProjectile(runtime,player,player.x+Math.cos(angle)*570,player.y+Math.sin(angle)*570,selectedHero.power*damage*multiplier,selectedHero.color,760);
+        }
+      } else if (ability.effect === 'surge') {
+        ring(player.x,player.y,285,selectedHero.accent);
+        enemiesNear(player.x,player.y,295).forEach((current)=>hit(current,selectedHero.power*3.4*multiplier,0));
+        runtime.units.filter((current)=>current.type==='hero'&&current.team===0).forEach((current)=>{current.hp=Math.min(current.maxHp,current.hp+current.maxHp*.25);});
       }
     };
 
     const keyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
-      if (['a', 'q', 'e', 'r'].includes(key)) event.preventDefault();
+      if (['a', ...ABILITY_BAR_KEYS].includes(key)) event.preventDefault();
       if (key === 'a' && !event.repeat) runtime.attackPrimed = true;
       if (key === 'escape') runtime.attackPrimed = false;
-      if (!event.repeat && ['q', 'e', 'r'].includes(key)) cast(key as 'q' | 'e' | 'r');
+      if (!event.repeat && ABILITY_BAR_KEYS.includes(key as AbilityKey)) cast(key as AbilityKey);
     };
 
     const spawnWave = (team: Team) => {
@@ -477,8 +490,8 @@ function BattleCanvas({ hero, era, onUpgrade, onOutcome, onHud }: { hero: Hero; 
     };
 
     const levelTeam = (team: Team) => {
-      const required = runtime.teamLevel[team] * 220;
-      if (runtime.teamXp[team] < required || runtime.teamLevel[team] >= 10) return;
+      const required = xpNeeded(runtime.teamLevel[team]);
+      if (runtime.teamXp[team] < required || runtime.teamLevel[team] >= 20) return;
       runtime.teamXp[team] -= required;
       runtime.teamLevel[team]++;
       runtime.units.filter((current) => current.type === 'hero' && current.team === team).forEach((current) => {
@@ -487,8 +500,8 @@ function BattleCanvas({ hero, era, onUpgrade, onOutcome, onHud }: { hero: Hero; 
         current.damage *= 1.055;
       });
       if (team === 0) {
-        runtime.paused = true;
-        onUpgrade();
+        if (ABILITY_MILESTONES.includes(runtime.teamLevel[team] as typeof ABILITY_MILESTONES[number])) runtime.paused = true;
+        onLevelUp(runtime.teamLevel[team]);
       }
     };
 
@@ -675,30 +688,17 @@ function BattleCanvas({ hero, era, onUpgrade, onOutcome, onHud }: { hero: Hero; 
         hudWait = .12;
         const player = runtime.units.find((current) => current.id === 'player')!;
         const mapUnits = runtime.units.filter((current) => !current.dead && current.type !== 'projectile' && current.type !== 'effect').map((current) => ({ id: current.id, type: current.type, team: current.team, x: current.x, y: current.y }));
-        onHud({ hp: player.hp, maxHp: player.maxHp, xp: [...runtime.teamXp] as [number, number], need: [runtime.teamLevel[0] * 220, runtime.teamLevel[1] * 220], level: [...runtime.teamLevel] as [number, number], kills: [...runtime.kills] as [number, number], time: runtime.elapsed, cooldowns: { ...runtime.cooldowns }, wave: runtime.wave, command: runtime.attackPrimed ? 'primed' : runtime.command.mode, mapUnits });
+        onHud({ hp: player.hp, maxHp: player.maxHp, xp: [...runtime.teamXp] as [number, number], need: [xpNeeded(runtime.teamLevel[0]),xpNeeded(runtime.teamLevel[1])], level: [...runtime.teamLevel] as [number, number], kills: [...runtime.kills] as [number, number], time: runtime.elapsed, cooldowns: { ...runtime.cooldowns }, wave: runtime.wave, command: runtime.attackPrimed ? 'primed' : runtime.command.mode, mapUnits });
       }
       if (runtime.running || runtime.outcome) requestAnimationFrame(frame);
     };
 
-    const applyUpgrade = (event: Event) => {
-      const upgrade = (event as CustomEvent<Upgrade>).detail;
-      const player = runtime.units.find((current) => current.id === 'player');
-      if (!player) return;
-      if (upgrade.kind === 'power') player.damage *= 1.24;
-      if (upgrade.kind === 'health') {
-        player.maxHp += upgrade.description.includes('260') ? 260 : upgrade.description.includes('240') ? 240 : upgrade.description.includes('210') ? 210 : 220;
-        player.hp = player.maxHp;
-      }
-      if (upgrade.kind === 'speed') player.speed *= 1.18;
-      if (upgrade.kind === 'haste') player.haste = (player.haste || 1) * 1.22;
-      if (upgrade.kind === 'ability') player.abilityPower = (player.abilityPower || 1) * 1.26;
-      runtime.paused = false;
-    };
+    const resumeAfterAbilityChoice = () => { runtime.paused = false; };
 
     const preventContextMenu = (event: MouseEvent) => event.preventDefault();
 
     window.addEventListener('keydown', keyDown);
-    window.addEventListener('blockbound-upgrade', applyUpgrade);
+    window.addEventListener('blockbound-ability-selected',resumeAfterAbilityChoice);
     canvas.addEventListener('mousemove', point);
     canvas.addEventListener('mousedown', mouseDown);
     canvas.addEventListener('contextmenu', preventContextMenu);
@@ -707,12 +707,12 @@ function BattleCanvas({ hero, era, onUpgrade, onOutcome, onHud }: { hero: Hero; 
     return () => {
       runtime.running = false;
       window.removeEventListener('keydown', keyDown);
-      window.removeEventListener('blockbound-upgrade', applyUpgrade);
+      window.removeEventListener('blockbound-ability-selected',resumeAfterAbilityChoice);
       canvas.removeEventListener('mousemove', point);
       canvas.removeEventListener('mousedown', mouseDown);
       canvas.removeEventListener('contextmenu', preventContextMenu);
     };
-  }, [onHud, onOutcome, onUpgrade]);
+  }, [onHud,onLevelUp,onOutcome]);
 
   return <canvas ref={canvasRef} width={1280} height={720} className="battleCanvas" aria-label="Playable three-lane Blockbound Arena battlefield" />;
 }
@@ -730,26 +730,39 @@ function Minimap({ units }: { units: MapUnit[] }) {
 }
 
 export function Battle({ hero, era, onExit }: { hero: Hero; era: Era; onExit: () => void }) {
-  const [hud, setHud] = useState<Hud>({ hp: hero.hp, maxHp: hero.hp, xp: [0, 0], need: [220, 220], level: [1, 1], kills: [0, 0], time: 0, cooldowns: { q: 0, e: 0, r: 0 }, wave: 0, command: 'idle', mapUnits: [] });
-  const [upgrade, setUpgrade] = useState(false);
+  const abilityTiers=useMemo(()=>getAbilityTiers(hero),[hero]);
+  const [selectedAbilities,setSelectedAbilities]=useState<AbilityLoadout>(()=>[abilityTiers[0].choices[0],null,null,null,null]);
+  const [choiceLevel,setChoiceLevel]=useState<number|null>(null);
+  const [levelNotice,setLevelNotice]=useState<number|null>(null);
+  const noticeTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const [hud, setHud] = useState<Hud>({ hp: hero.hp, maxHp: hero.hp, xp: [0, 0], need: [xpNeeded(1),xpNeeded(1)], level: [1, 1], kills: [0, 0], time: 0, cooldowns: { q: 0, w: 0, e: 0, r: 0, t: 0 }, wave: 0, command: 'idle', mapUnits: [] });
   const [outcome, setOutcome] = useState<'' | 'VICTORY' | 'DEFEAT'>('');
   const [tip, setTip] = useState(true);
   const gameKey = useMemo(() => `${hero.id}-${era}`, [hero.id, era]);
-  const handleUpgrade = useCallback(() => setUpgrade(true), []);
+  const handleLevelUp=useCallback((level:number)=>{
+    setLevelNotice(level);
+    if(noticeTimer.current)clearTimeout(noticeTimer.current);
+    noticeTimer.current=setTimeout(()=>setLevelNotice(null),2600);
+    if(ABILITY_MILESTONES.includes(level as typeof ABILITY_MILESTONES[number]))setChoiceLevel(level);
+  },[]);
   const handleOutcome = useCallback((result: 'VICTORY' | 'DEFEAT') => setOutcome(result), []);
   const handleHud = useCallback((nextHud: Hud) => setHud(nextHud), []);
-  const applyUpgrade = (selected: Upgrade) => {
-    window.dispatchEvent(new CustomEvent('blockbound-upgrade', { detail: selected }));
-    setUpgrade(false);
+  const chooseAbility=(selected:AbilityOption)=>{
+    const slot=abilityTiers.findIndex(tier=>tier.level===choiceLevel);
+    if(slot<0)return;
+    setSelectedAbilities(current=>current.map((ability,index)=>index===slot?selected:ability));
+    setChoiceLevel(null);
+    window.dispatchEvent(new Event('blockbound-ability-selected'));
   };
 
   useEffect(() => {
     const timer = setTimeout(() => setTip(false), 9000);
-    return () => clearTimeout(timer);
+    return () => {clearTimeout(timer);if(noticeTimer.current)clearTimeout(noticeTimer.current);};
   }, []);
 
   const commandLabel = hud.command === 'primed' ? 'SELECT ATTACK DESTINATION' : hud.command === 'attackMove' ? 'ATTACK-MOVING' : hud.command === 'attackTarget' ? 'FOCUSING TARGET' : hud.command === 'move' ? 'MOVING' : 'AWAITING COMMAND';
-  const unlockedAbility = hud.level[0] === 3 ? { key: 'E', name: hero.abilities[1] } : hud.level[0] === 5 ? { key: 'R', name: hero.abilities[2] } : null;
+  const choiceTier=abilityTiers.find(tier=>tier.level===choiceLevel);
+  const noticeIsMilestone=levelNotice!==null&&ABILITY_MILESTONES.includes(levelNotice as typeof ABILITY_MILESTONES[number]);
 
   return <main className="battleScreen" style={{ '--hero': hero.color } as React.CSSProperties}>
     <header className="battleTop">
@@ -758,17 +771,18 @@ export function Battle({ hero, era, onExit }: { hero: Hero; era: Era; onExit: ()
       <div className="waveCounter">WAVE <b>{hud.wave}</b><button onClick={onExit}>LEAVE</button></div>
     </header>
     <div className="arenaFrame">
-      <BattleCanvas key={gameKey} hero={hero} era={era} onUpgrade={handleUpgrade} onOutcome={handleOutcome} onHud={handleHud} />
-      <div className="teamXp teamXpBlue"><span><b>YOUR TEAM · LEVEL {hud.level[0]}</b><small>{Math.floor(hud.xp[0])} / {hud.need[0]} XP</small></span><i><b style={{ width: `${hud.xp[0] / hud.need[0] * 100}%` }} /></i></div>
-      <div className="teamXp teamXpRed"><span><small>{Math.floor(hud.xp[1])} / {hud.need[1]} XP</small><b>ENEMY · LEVEL {hud.level[1]}</b></span><i><b style={{ width: `${hud.xp[1] / hud.need[1] * 100}%` }} /></i></div>
+      <BattleCanvas key={gameKey} hero={hero} era={era} selectedAbilities={selectedAbilities} onLevelUp={handleLevelUp} onOutcome={handleOutcome} onHud={handleHud} />
+      <div className="teamXp teamXpBlue"><span><b>YOUR TEAM · LEVEL {hud.level[0]}</b><small>{Math.floor(hud.xp[0])} / {hud.need[0]} XP</small></span><i><b style={{ width: `${Math.min(100,hud.xp[0] / hud.need[0] * 100)}%` }} /></i></div>
+      <div className="teamXp teamXpRed"><span><small>{Math.floor(hud.xp[1])} / {hud.need[1]} XP</small><b>ENEMY · LEVEL {hud.level[1]}</b></span><i><b style={{ width: `${Math.min(100,hud.xp[1] / hud.need[1] * 100)}%` }} /></i></div>
       <div className={`commandModeTag ${hud.command === 'primed' ? 'commandPrimed' : ''}`}>{commandLabel}</div>
-      {tip && <div className="controlTip"><button onClick={() => setTip(false)}>×</button><b><kbd>RIGHT-CLICK</kbd> TO MOVE</b><span>Press <kbd>A</kbd>, then left-click ground to attack-move—or left-click an enemy to focus it. Abilities remain on <kbd>Q</kbd> <kbd>E</kbd> <kbd>R</kbd>.</span></div>}
-      {upgrade && <div className="upgradeOverlay"><div className="upgradeModal"><p className="eyebrow">TEAM LEVEL {hud.level[0]} REACHED</p><h2>CHOOSE YOUR UPGRADE</h2><p>Every ally gained base stats. Choose one bonus unique to {hero.name}.</p>{unlockedAbility && <div className="unlockBanner"><kbd>{unlockedAbility.key}</kbd><span><small>NEW ABILITY UNLOCKED</small><b>{unlockedAbility.name}</b></span></div>}<div className="upgradeChoices">{hero.upgrades.map((selected, index) => <button key={selected.name} onClick={() => applyUpgrade(selected)}><kbd>{index + 1}</kbd><span><b>{selected.name}</b><small>{selected.description}</small></span><i>›</i></button>)}</div></div></div>}
+      {tip && <div className="controlTip"><button onClick={() => setTip(false)}>×</button><b><kbd>RIGHT-CLICK</kbd> TO MOVE</b><span>Press <kbd>A</kbd>, then left-click to attack. Your five ability slots use <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> <kbd>T</kbd>.</span></div>}
+      {levelNotice!==null&&<div className={`levelNotice ${noticeIsMilestone?'specialLevel':''}`}><small>TEAM LEVEL</small><b>{levelNotice}</b><span>{noticeIsMilestone?'ABILITY CHOICE AVAILABLE':'BASE STATS INCREASED'}</span></div>}
+      {choiceTier&&<div className="abilityChoicePanel"><p>LEVEL {choiceTier.level} · <kbd>{choiceTier.key.toUpperCase()}</kbd> SLOT</p><h3>CHOOSE AN ABILITY</h3><span>This choice fills the next space in your bottom ability bar.</span><div>{choiceTier.choices.map(choice=><button key={choice.name} onClick={()=>chooseAbility(choice)}><i>{choice.icon}</i><b>{choice.name}</b><small>{choice.description}</small></button>)}</div></div>}
       {outcome && <div className="outcomeOverlay"><p>{outcome === 'VICTORY' ? 'ENEMY HEART SHATTERED' : 'YOUR HEART HAS FALLEN'}</p><h2>{outcome}</h2><div><span>TEAM LEVEL <b>{hud.level[0]}</b></span><span>TAKEDOWNS <b>{hud.kills[0]}</b></span><span>TIME <b>{formatTime(hud.time)}</b></span></div><button onClick={onExit}>RETURN TO HQ</button></div>}
     </div>
     <footer className="battleHud">
       <div className="playerPanel"><HeroPortrait hero={hero} /><span><small>{hero.role}</small><b>{hero.name}</b><i><b style={{ width: `${Math.max(0, hud.hp / hud.maxHp * 100)}%` }} /></i><em>{Math.ceil(Math.max(0, hud.hp))} / {Math.ceil(hud.maxHp)}</em></span></div>
-      <div className="abilities">{hero.abilities.map((name, index) => { const key = ['q', 'e', 'r'][index] as 'q' | 'e' | 'r'; const cooldown = hud.cooldowns[key]; const unlockLevel = ABILITY_UNLOCK_LEVEL[key]; const locked = hud.level[0] < unlockLevel; return <div key={name} className={`${cooldown > 0 ? 'cooling' : ''} ${locked ? 'locked' : ''}`}><kbd>{key.toUpperCase()}</kbd><i style={{ '--cool': `${Math.min(100, cooldown / (index === 2 ? 24 : index === 1 ? 8 : 5) * 100)}%` } as React.CSSProperties}>{locked ? `LVL ${unlockLevel}` : cooldown > 0 ? cooldown.toFixed(1) : ['◆', '✦', '✹'][index]}</i><span>{name}</span></div>; })}<div className="basicAbility"><kbd>A + CLICK</kbd><i>➤</i><span>Attack command</span></div></div>
+      <div className="abilities" aria-label="Ability bar">{abilityTiers.map((tier,index)=>{const selected=selectedAbilities[index],cooldown=hud.cooldowns[tier.key],locked=!selected;return <div key={tier.level} className={`${cooldown>0?'cooling':''} ${locked?'locked':''}`} aria-label={selected?`${selected.name} ability`:`Ability slot unlocks at level ${tier.level}`}><kbd>{tier.key.toUpperCase()}</kbd><i style={{'--cool':`${Math.min(100,cooldown/ABILITY_COOLDOWNS[index]*100)}%`} as React.CSSProperties}>{locked?`LVL ${tier.level}`:cooldown>0?cooldown.toFixed(1):selected.icon}</i><span>{selected?.name??'Unchosen'}</span></div>})}</div>
       <Minimap units={hud.mapUnits} />
     </footer>
   </main>;
