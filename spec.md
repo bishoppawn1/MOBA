@@ -33,8 +33,9 @@ The intended match loop is:
 - Minion waves spawn in all three lanes for both teams on a repeating timer.
 - Every third wave adds a siege unit only in lanes where that team has already destroyed an enemy tower. Before a team destroys a tower, none of its lanes receive siege units.
 - Siege access is tracked separately for each team and lane. Destroying a top-lane tower unlocks allied top-lane siege units without changing middle or bottom waves; destroying towers in additional lanes unlocks those lanes too.
-- The battlefield has three lanes: top, middle, and bottom. Top climbs north and then bends south; bottom bends south and then climbs north; middle follows a shallower opposing curve.
-- Lane minions and bots follow the same curved centerlines shown by the terrain and minimap rather than traveling directly from left to right.
+- The battlefield has three lanes: top, middle, and bottom. All three lanes share a road through each castle gate, fan out after leaving the base, cross the battlefield on distinct curved routes, and converge again at the opposing castle.
+- Lane minions spawn inside their team's castle gate in a compact formation. They travel along the shared base road before separating onto their assigned top, middle, or bottom path.
+- Lane minions and bots follow the same converging curved centerlines shown by the terrain and minimap rather than traveling directly from left to right.
 - Each side has two towers in each lane and one final heart structure.
 - Towers and hearts are durable, high-damage safe zones that punish unsupported dives.
 - Melee, ranged, and siege minions have enough health to sustain a lane fight rather than disappearing in one or two attacks.
@@ -95,10 +96,11 @@ Each hero has distinct health, speed, attack power, attack cadence, range, color
 - Ability milestones pause the match and open a compact two-choice panel immediately above the ability bar.
 - The minimap shows all three lanes plus the current positions of heroes, minions, towers, and both hearts.
 - The minimap shows both Power Relics and the camera's current viewport.
+- The battlefield and minimap both show all three lane paths meeting at each castle.
 - Battlefield units do not show nameplates; hero identity remains visible in selection and the player HUD.
 - Melee minions use a deliberately smaller silhouette than ranged minions and heroes. Crownkeep swordsmen carry a pointed sword with a visible crossguard and grip, a helmet, and a shield; Neon Divide breachers use a riot shield and compact energy blade.
 - Ranged minions must be identifiable by silhouette: Crownkeep archers carry a curved bow, drawn string, arrow, and back quiver, while Neon Divide riflemen carry a long rifle.
-- Siege minions must read as machinery rather than generic carts: Crownkeep catapults have large wheels, an A-frame, throwing arm, counterweight, bucket, and loaded stone; Neon Divide missile carriers use tracks and paired launch tubes.
+- Siege minions must read as machinery rather than generic carts: Crownkeep catapults have large wheels, an A-frame, throwing arm, counterweight, bucket, and loaded stone; their chassis faces downlane while the loaded bucket rests to the rear. Neon Divide missile carriers use tracks and paired forward-facing launch tubes.
 - Ranged and siege projectiles reinforce those identities with arrows and stones in Crownkeep and bullets and rockets in Neon Divide.
 - Bars are appropriate for live, changing resources such as health and XP. This restriction applies only to static character attributes.
 - Controls and progression should be understandable without opening external documentation.
@@ -150,4 +152,13 @@ Both battlegrounds use a large, camera-followed world. Lanes are long, wide, and
 - Crownkeep swordsmen are visibly smaller than heroes and archers while their helmet, shield, and complete sword remain readable at normal match zoom.
 - An archer and a melee minion remain distinguishable when viewed at the normal match zoom without labels.
 - A Crownkeep catapult visibly includes wheels and a raised throwing arm with a stone bucket.
+- Allied catapult chassis face toward the enemy castle and enemy catapults mirror toward the allied castle.
 - The equivalent Neon Divide units remain mechanically identical but use rifle and missile-carrier silhouettes.
+
+## Acceptance criteria for castle lane routing
+
+- All three rendered lane roads overlap at each castle, remain shared through the gate, and visibly separate outside the base.
+- Every newly spawned minion begins within its team's castle gate rather than appearing independently in its destination lane.
+- Top-, middle-, and bottom-lane minions follow the shared exit before branching onto their assigned lane.
+- The opposing castle uses the same convergence and spawn behavior in mirrored form.
+- The minimap paths match the battlefield roads and show both three-way castle junctions.

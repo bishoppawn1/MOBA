@@ -96,6 +96,8 @@ const LANE_Y: [number, number, number] = [380, 900, 1420];
 const LANE_NAMES = ['TOP', 'MIDDLE', 'BOTTOM'];
 const LANE_HALF_WIDTH = 128;
 const ROTATION_X = [760, 1600, 2440];
+const CASTLE_X: [number, number] = [150, 3050];
+const MINION_SPAWN_X: [number, number] = [210, 2990];
 const ABILITY_COOLDOWNS = [5,8,12,18,28];
 const xpNeeded = (level:number)=>200+level*60;
 
@@ -105,9 +107,9 @@ const MAPS = {
 };
 
 const LANE_PATHS: Record<Lane, WorldPoint[]> = {
-  0: [{ x: 0, y: 380 }, { x: 420, y: 380 }, { x: 980, y: 190 }, { x: 1640, y: 230 }, { x: 2260, y: 430 }, { x: 2800, y: 380 }, { x: 3200, y: 380 }],
+  0: [{ x: 0, y: 900 }, { x: 260, y: 900 }, { x: 480, y: 730 }, { x: 720, y: 430 }, { x: 980, y: 190 }, { x: 1640, y: 230 }, { x: 2260, y: 430 }, { x: 2480, y: 600 }, { x: 2720, y: 900 }, { x: 3200, y: 900 }],
   1: [{ x: 0, y: 900 }, { x: 620, y: 900 }, { x: 1180, y: 820 }, { x: 2020, y: 980 }, { x: 2580, y: 900 }, { x: 3200, y: 900 }],
-  2: [{ x: 0, y: 1420 }, { x: 420, y: 1420 }, { x: 980, y: 1610 }, { x: 1640, y: 1570 }, { x: 2260, y: 1370 }, { x: 2800, y: 1420 }, { x: 3200, y: 1420 }],
+  2: [{ x: 0, y: 900 }, { x: 260, y: 900 }, { x: 480, y: 1070 }, { x: 720, y: 1370 }, { x: 980, y: 1610 }, { x: 1640, y: 1570 }, { x: 2260, y: 1370 }, { x: 2480, y: 1200 }, { x: 2720, y: 900 }, { x: 3200, y: 900 }],
 };
 
 function pointOnLane(lane: Lane, x: number) {
@@ -264,8 +266,8 @@ function setupGame(hero: Hero, era: Era): Runtime {
     units.push(unit({ id: `enemy-${index}`, type: 'hero', team: 1, lane, x, y: pointOnLane(lane, x).y + (index > 2 ? 42 : -34), hp: h.hp, maxHp: h.hp, speed: h.speed * .86, damage: h.power * .82, range: h.range, radius: 29, color: h.color, heroId: h.id, abilityPower: 1, haste: 1 }));
   });
 
-  units.push(unit({ id: 'core-0', type: 'core', team: 0, lane: 1, x: 150, y: LANE_Y[1], hp: 7200, maxHp: 7200, radius: 96, color: map.team0, damage: 185, range: 500 }));
-  units.push(unit({ id: 'core-1', type: 'core', team: 1, lane: 1, x: 3050, y: LANE_Y[1], hp: 7200, maxHp: 7200, radius: 96, color: map.team1, damage: 185, range: 500 }));
+  units.push(unit({ id: 'core-0', type: 'core', team: 0, lane: 1, x: CASTLE_X[0], y: LANE_Y[1], hp: 7200, maxHp: 7200, radius: 96, color: map.team0, damage: 185, range: 500 }));
+  units.push(unit({ id: 'core-1', type: 'core', team: 1, lane: 1, x: CASTLE_X[1], y: LANE_Y[1], hp: 7200, maxHp: 7200, radius: 96, color: map.team1, damage: 185, range: 500 }));
 
   LANE_Y.forEach((_y, laneIndex) => {
     const lane = laneIndex as Lane;
@@ -365,9 +367,11 @@ function drawWheel(context: CanvasRenderingContext2D, x: number, y: number, radi
 function drawSiegeUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, x: number, y: number) {
   const direction = current.team === 0 ? 1 : -1;
   if (era === 'medieval') {
+    const loadedArmDirection = -direction;
     drawBox(context, x, y + 7, 86, 18, 8, shade(current.color, -20));
     drawWheel(context, x - 28, y + 22, 18);
     drawWheel(context, x + 28, y + 22, 18);
+    drawBox(context, x + direction * 44, y + 3, 24, 8, 3, '#6e472b');
 
     context.strokeStyle = '#6e472b';
     context.lineWidth = 10;
@@ -378,15 +382,15 @@ function drawSiegeUnit(context: CanvasRenderingContext2D, current: Unit, era: Er
     context.lineTo(x + 27, y + 4);
     context.stroke();
 
-    const armAngle = direction === 1 ? -.93 : .93;
-    drawRotatedBox(context, x + direction * 8, y - 39, 94, 10, 4, '#8a5b34', armAngle);
-    drawBox(context, x + direction * 43, y - 76, 27, 19, 6, '#4c3121');
-    drawBox(context, x - direction * 26, y - 11, 24, 27, 6, '#30362f');
+    const armAngle = loadedArmDirection === 1 ? -.93 : .93;
+    drawRotatedBox(context, x + loadedArmDirection * 8, y - 39, 94, 10, 4, '#8a5b34', armAngle);
+    drawBox(context, x + loadedArmDirection * 43, y - 76, 27, 19, 6, '#4c3121');
+    drawBox(context, x - loadedArmDirection * 26, y - 11, 24, 27, 6, '#30362f');
     context.fillStyle = '#879080';
     context.strokeStyle = '#30362f';
     context.lineWidth = 3;
     context.beginPath();
-    context.arc(x + direction * 45, y - 89, 10, 0, Math.PI * 2);
+    context.arc(x + loadedArmDirection * 45, y - 89, 10, 0, Math.PI * 2);
     context.fill();
     context.stroke();
     drawBox(context, x, y - 37, 15, 15, 4, shade(current.color, 22));
@@ -821,20 +825,22 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
 
     const spawnWave = (team: Team) => {
       const direction = team === 0 ? 1 : -1;
-      const startX = team === 0 ? 300 : 2900;
+      const startX = MINION_SPAWN_X[team];
       LANE_Y.forEach((_laneY, laneIndex) => {
         const lane = laneIndex as Lane;
         const includeSiege = runtime.wave % 3 === 0 && runtime.siegeLanes[team].has(lane);
         const types: UnitType[] = ['melee', 'melee', 'melee', 'melee', 'ranged', 'ranged', 'ranged', ...(includeSiege ? ['siege' as UnitType] : [])];
         types.forEach((type, index) => {
           const health = type === 'siege' ? 920 : type === 'melee' ? 430 : 310;
+          const column = index % 4;
+          const row = Math.floor(index / 4);
           runtime.units.push(unit({
             id: `m-${team}-${runtime.wave}-${lane}-${index}`,
             type,
             team,
             lane,
-            x: startX - direction * index * 34,
-            y: pointOnLane(lane, startX - direction * index * 34).y + ((index % 3) - 1) * 42,
+            x: startX - direction * column * 25,
+            y: LANE_Y[1] + (lane - 1) * 38 + (row * 18 - 9),
             hp: health,
             maxHp: health,
             speed: type === 'siege' ? 66 : 86,
