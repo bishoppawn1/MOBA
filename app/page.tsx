@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Battle, Hero, HeroSelect } from './game';
+import { Hero, HeroSelect } from './game';
+import { Battle } from './battle';
 
 type Screen = 'home'|'select'|'battle';
 

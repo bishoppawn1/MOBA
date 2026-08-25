@@ -6,9 +6,10 @@ A playable block-forged MOBA prototype featuring ten heroes, medieval and modern
 
 ## Controls
 
-- Move: `WASD` or arrow keys
-- Aim: mouse
-- Basic attack: click
+- Move: right-click the ground
+- Attack-move: press `A`, then left-click the ground
+- Focus an enemy: press `A`, then left-click that enemy
+- Basic attacks fire automatically while attack-moving or focusing a target
 - Abilities: `Q`, `E`, and `R`
 
 The current prototype runs a complete 5v5 match with bot-controlled allies and opponents. Online player networking is a future backend milestone.

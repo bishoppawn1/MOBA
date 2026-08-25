@@ -2,7 +2,7 @@
 
 ## Product summary
 
-Blockbound Arena is a fast, block-styled 5v5 MOBA prototype for desktop browsers. The player chooses one of ten heroes, joins four allied bots, pushes a single contested lane against five enemy bots, destroys defensive towers, and wins by shattering the opposing team heart.
+Blockbound Arena is a fast, block-styled 5v5 MOBA prototype for desktop browsers. The player chooses one of ten heroes, joins four allied bots, pushes three contested lanes against five enemy bots, destroys defensive towers, and wins by shattering the opposing team heart.
 
 The prototype is a self-contained static React/Vite game. Online matchmaking and player networking are future work, not part of the current playable scope.
 
@@ -12,7 +12,7 @@ The intended match loop is:
 
 1. Open the landing screen and enter the 5v5 demo.
 2. Choose a hero and one of two battleground presentations.
-3. Move, aim, basic-attack, and use unlocked hero abilities.
+3. Issue movement and attack commands, then use unlocked hero abilities.
 4. Defeat enemy units and structures to earn shared team XP.
 5. Level up as a team, unlock abilities, and choose hero-specific upgrades.
 6. Break through towers and destroy the enemy heart before the allied heart falls.
@@ -21,9 +21,10 @@ The intended match loop is:
 
 | Action | Input |
 | --- | --- |
-| Move | `WASD` or arrow keys |
-| Aim | Mouse movement |
-| Basic attack | Left click |
+| Move | Right-click the ground |
+| Attack-move | Press `A`, then left-click the ground |
+| Focus attack | Press `A`, then left-click an enemy |
+| Basic attack | Automatic while attack-moving or focusing a target |
 | First ability | `Q` |
 | Second ability | `E` |
 | Ultimate ability | `R` |
@@ -32,7 +33,8 @@ The intended match loop is:
 
 - Teams contain five heroes. The human controls one allied hero; bots control the other nine heroes.
 - Minion waves spawn for both teams on a repeating timer. Every third wave includes a siege unit.
-- Each side has two lane towers and one final heart structure.
+- The battlefield has three lanes: top, middle, and bottom.
+- Each side has two towers in each lane and one final heart structure.
 - Towers and hearts attack enemies in range.
 - Heroes respawn after being defeated. Other destroyed units and structures do not respawn.
 - Destroying the enemy heart produces victory; losing the allied heart produces defeat.
@@ -78,7 +80,9 @@ Each hero has a distinct health, speed, attack-power, range, color treatment, ab
 
 - Hero-selection attributes must be shown as exact labeled values, not bars. This avoids implying a normalized rating when the game uses real underlying values.
 - Ability rows on the selection screen show their input, name, description, and unlock level.
-- The battle HUD shows current health, team XP and level, kills, match time, wave number, cooldowns, locked abilities, and a minimap.
+- The battle HUD shows current health, team XP and level, kills, match time, wave number, cooldowns, locked abilities, and a live minimap.
+- The minimap shows all three lanes plus the current positions of heroes, minions, towers, and both hearts.
+- Battlefield units do not show nameplates; hero identity remains visible in selection and the player HUD.
 - Bars are appropriate for live, changing resources such as health and XP. This restriction applies only to static character attributes.
 - Controls and progression should be understandable without opening external documentation.
 
