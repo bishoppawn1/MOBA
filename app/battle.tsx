@@ -6,6 +6,7 @@ import { ABILITY_BAR_KEYS, ABILITY_MILESTONES, AbilityKey, AbilityOption, Era, g
 type Team = 0 | 1;
 type Lane = 0 | 1 | 2;
 type UnitType = 'hero' | 'melee' | 'ranged' | 'siege' | 'tower' | 'core' | 'projectile' | 'effect';
+type ProjectileStyle = 'energy' | 'arrow' | 'bullet' | 'stone' | 'rocket';
 type CommandMode = 'idle' | 'move' | 'attackMove' | 'attackTarget';
 type AbilityLoadout = Array<AbilityOption|null>;
 type Objective = {
@@ -43,6 +44,7 @@ type Unit = {
   haste?: number;
   renderX?: number;
   renderY?: number;
+  projectileStyle?: ProjectileStyle;
 };
 
 type Runtime = {
@@ -225,14 +227,177 @@ function drawHealth(context: CanvasRenderingContext2D, current: Unit, x: number,
   context.fillRect(x - width / 2 + 2, y + 2, (width - 4) * Math.max(0, current.hp / current.maxHp), 5);
 }
 
+function drawRotatedBox(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, depth: number, color: string, angle: number) {
+  context.save();
+  context.translate(x, y);
+  context.rotate(angle);
+  drawBox(context, 0, 0, width, height, depth, color);
+  context.restore();
+}
+
+function drawWheel(context: CanvasRenderingContext2D, x: number, y: number, radius: number) {
+  context.fillStyle = '#171c18';
+  context.strokeStyle = '#0a0d0b';
+  context.lineWidth = 4;
+  context.beginPath();
+  for (let index = 0; index < 8; index++) {
+    const angle = Math.PI / 8 + index * Math.PI / 4;
+    const wheelX = x + Math.cos(angle) * radius;
+    const wheelY = y + Math.sin(angle) * radius;
+    if (index === 0) context.moveTo(wheelX, wheelY);
+    else context.lineTo(wheelX, wheelY);
+  }
+  context.closePath();
+  context.fill();
+  context.stroke();
+  context.fillStyle = '#727866';
+  context.fillRect(x - 5, y - 5, 10, 10);
+}
+
+function drawSiegeUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, x: number, y: number) {
+  const direction = current.team === 0 ? 1 : -1;
+  if (era === 'medieval') {
+    drawBox(context, x, y + 7, 86, 18, 8, shade(current.color, -20));
+    drawWheel(context, x - 28, y + 22, 18);
+    drawWheel(context, x + 28, y + 22, 18);
+
+    context.strokeStyle = '#6e472b';
+    context.lineWidth = 10;
+    context.lineCap = 'square';
+    context.beginPath();
+    context.moveTo(x - 27, y + 4);
+    context.lineTo(x, y - 38);
+    context.lineTo(x + 27, y + 4);
+    context.stroke();
+
+    const armAngle = direction === 1 ? -.93 : .93;
+    drawRotatedBox(context, x + direction * 8, y - 39, 94, 10, 4, '#8a5b34', armAngle);
+    drawBox(context, x + direction * 43, y - 76, 27, 19, 6, '#4c3121');
+    drawBox(context, x - direction * 26, y - 11, 24, 27, 6, '#30362f');
+    context.fillStyle = '#879080';
+    context.strokeStyle = '#30362f';
+    context.lineWidth = 3;
+    context.beginPath();
+    context.arc(x + direction * 45, y - 89, 10, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    drawBox(context, x, y - 37, 15, 15, 4, shade(current.color, 22));
+    drawHealth(context, current, x, y - 110);
+    return;
+  }
+
+  drawBox(context, x, y + 5, 92, 28, 9, current.color);
+  drawBox(context, x, y + 24, 98, 17, 5, '#20272a');
+  [-32, 0, 32].forEach((offset) => drawWheel(context, x + offset, y + 25, 11));
+  drawBox(context, x - direction * 7, y - 17, 42, 14, 5, shade(current.color, 18));
+  const launcherAngle = direction === 1 ? -.38 : .38;
+  [-10, 10].forEach((offset) => {
+    drawRotatedBox(context, x + direction * 12, y - 41 + offset, 76, 12, 4, '#39464c', launcherAngle);
+    const noseX = x + direction * 50;
+    const noseY = y - 57 + offset;
+    context.fillStyle = '#d3ff56';
+    context.beginPath();
+    context.moveTo(noseX + direction * 12, noseY);
+    context.lineTo(noseX - direction * 2, noseY - 7);
+    context.lineTo(noseX - direction * 2, noseY + 7);
+    context.closePath();
+    context.fill();
+  });
+  drawHealth(context, current, x, y - 85);
+}
+
+function drawRangedUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, x: number, y: number) {
+  const direction = current.team === 0 ? 1 : -1;
+  drawBox(context, x - 6, y + 5, 9, 25, 3, shade(current.color, -24));
+  drawBox(context, x + 6, y + 5, 9, 25, 3, shade(current.color, -24));
+  drawBox(context, x, y - 17, 24, 37, 6, current.color);
+  drawBox(context, x, y - 49, 23, 23, 5, shade(current.color, 26));
+
+  if (era === 'medieval') {
+    const bowX = x + direction * 27;
+    drawRotatedBox(context, x - direction * 17, y - 27, 12, 36, 4, '#573823', direction * .18);
+    [-5, 0, 5].forEach((offset) => {
+      context.strokeStyle = '#d8c79a';
+      context.lineWidth = 2;
+      context.beginPath();
+      context.moveTo(x - direction * (18 + offset), y - 41);
+      context.lineTo(x - direction * (23 + offset), y - 62);
+      context.stroke();
+    });
+    context.strokeStyle = '#d4a85d';
+    context.lineWidth = 5;
+    context.beginPath();
+    context.moveTo(bowX, y - 54);
+    context.quadraticCurveTo(bowX + direction * 22, y - 27, bowX, y);
+    context.stroke();
+    context.strokeStyle = '#eee7d4';
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(bowX, y - 54);
+    context.lineTo(x + direction * 14, y - 27);
+    context.lineTo(bowX, y);
+    context.moveTo(x + direction * 13, y - 27);
+    context.lineTo(x + direction * 54, y - 27);
+    context.stroke();
+    context.fillStyle = '#eee7d4';
+    context.beginPath();
+    context.moveTo(x + direction * 58, y - 27);
+    context.lineTo(x + direction * 49, y - 33);
+    context.lineTo(x + direction * 49, y - 21);
+    context.closePath();
+    context.fill();
+  } else {
+    drawBox(context, x - direction * 14, y - 25, 15, 25, 4, '#334047');
+    drawBox(context, x + direction * 27, y - 27, 64, 11, 4, '#29343b');
+    drawBox(context, x + direction * 10, y - 16, 13, 18, 3, '#59666b');
+    context.fillStyle = '#d3ff56';
+    context.fillRect(x + direction * 58 - (direction < 0 ? 4 : 0), y - 30, 5, 5);
+  }
+  drawHealth(context, current, x, y - 82);
+}
+
 function drawUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, elapsed: number) {
   const x = current.renderX ?? current.x;
   const y = current.renderY ?? current.y;
   if (current.type === 'projectile') {
-    context.shadowColor = current.color;
-    context.shadowBlur = 18;
-    drawBox(context, x, y, 13, 13, 4, current.color);
-    context.shadowBlur = 0;
+    const angle = Math.atan2(current.vy || 0, current.vx || 1);
+    context.save();
+    context.translate(x, y);
+    context.rotate(angle);
+    if (current.projectileStyle === 'arrow') {
+      context.strokeStyle = '#f1e8ce';
+      context.lineWidth = 3;
+      context.beginPath();
+      context.moveTo(-15, 0);
+      context.lineTo(13, 0);
+      context.stroke();
+      context.fillStyle = '#b9c1b4';
+      context.beginPath();
+      context.moveTo(18, 0);
+      context.lineTo(9, -5);
+      context.lineTo(9, 5);
+      context.closePath();
+      context.fill();
+    } else if (current.projectileStyle === 'stone') {
+      drawBox(context, 0, 0, 20, 20, 5, '#7f8878');
+    } else if (current.projectileStyle === 'bullet') {
+      context.strokeStyle = '#d3ff56';
+      context.lineWidth = 5;
+      context.beginPath();
+      context.moveTo(-12, 0);
+      context.lineTo(14, 0);
+      context.stroke();
+    } else if (current.projectileStyle === 'rocket') {
+      drawBox(context, 0, 0, 26, 10, 3, '#d9e1dc');
+      context.fillStyle = '#d3ff56';
+      context.fillRect(-19, -4, 8, 8);
+    } else {
+      context.shadowColor = current.color;
+      context.shadowBlur = 18;
+      drawBox(context, 0, 0, 13, 13, 4, current.color);
+      context.shadowBlur = 0;
+    }
+    context.restore();
     return;
   }
   if (current.type === 'effect') {
@@ -282,12 +447,7 @@ function drawUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, el
     }
     drawHealth(context, current, x, y - 163);
   } else if (current.type === 'siege') {
-    drawBox(context, x, y, 76, 42, 10, current.color);
-    drawBox(context, x - 25, y + 28, 18, 24, 4, '#20251f');
-    drawBox(context, x + 25, y + 28, 18, 24, 4, '#20251f');
-    const direction = current.team === 0 ? 1 : -1;
-    drawBox(context, x + direction * 25, y - 31, 58, 15, 5, era === 'medieval' ? '#684228' : '#343e44');
-    drawHealth(context, current, x, y - 60);
+    drawSiegeUnit(context, current, era, x, y);
   } else if (current.type === 'hero') {
     const phase = [...current.id].reduce((total, letter) => total + letter.charCodeAt(0), 0) * .07;
     const moving = Math.hypot(current.x - (current.renderX ?? current.x), current.y - (current.renderY ?? current.y)) > 1;
@@ -313,22 +473,25 @@ function drawUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, el
       context.stroke();
     }
   } else {
-    const size = current.type === 'ranged' ? 27 : 31;
+    if (current.type === 'ranged') {
+      drawRangedUnit(context, current, era, x, y);
+      context.restore();
+      return;
+    }
     drawBox(context, x - 7, y + 5, 11, 24, 3, shade(current.color, -20));
     drawBox(context, x + 7, y + 5, 11, 24, 3, shade(current.color, -20));
-    drawBox(context, x, y - 15, size, 35, 6, current.color);
+    drawBox(context, x, y - 15, 31, 35, 6, current.color);
     drawBox(context, x, y - 47, 24, 24, 5, shade(current.color, 26));
     const direction = current.team === 0 ? 1 : -1;
-    if (current.type === 'ranged') drawBox(context, x + direction * 25, y - 23, 38, 8, 3, era === 'medieval' ? '#765035' : '#29343b');
-    else drawBox(context, x + direction * 22, y - 21, 8, 40, 3, era === 'medieval' ? '#ece3c2' : '#29343b');
+    drawBox(context, x + direction * 22, y - 21, 8, 40, 3, era === 'medieval' ? '#ece3c2' : '#29343b');
     drawHealth(context, current, x, y - 76);
   }
   context.restore();
 }
 
-function spawnProjectile(runtime: Runtime, source: Unit, targetX: number, targetY: number, damage = source.damage, color = source.color, speed = 480) {
+function spawnProjectile(runtime: Runtime, source: Unit, targetX: number, targetY: number, damage = source.damage, color = source.color, speed = 480, projectileStyle: ProjectileStyle = 'energy') {
   const length = Math.max(1, Math.hypot(targetX - source.x, targetY - source.y));
-  runtime.units.push(unit({ id: `p-${Math.random()}`, type: 'projectile', team: source.team, lane: source.lane, x: source.x, y: source.y - 8, hp: 1, maxHp: 1, speed, damage, range: 0, radius: 7, color, vx: (targetX - source.x) / length * speed, vy: (targetY - source.y) / length * speed, life: 1.5 }));
+  runtime.units.push(unit({ id: `p-${Math.random()}`, type: 'projectile', team: source.team, lane: source.lane, x: source.x, y: source.y - 8, hp: 1, maxHp: 1, speed, damage, range: 0, radius: 7, color, vx: (targetX - source.x) / length * speed, vy: (targetY - source.y) / length * speed, life: 1.5, projectileStyle }));
 }
 
 function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHud }: { hero: Hero; era: Era; selectedAbilities: AbilityLoadout; onLevelUp: (level:number) => void; onOutcome: (outcome: 'VICTORY' | 'DEFEAT') => void; onHud: (hud: Hud) => void }) {
@@ -541,7 +704,12 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       const buffMultiplier = runtime.teamBuffUntil[source.team] > runtime.elapsed ? 1.2 : 1;
       const damage = source.damage * buffMultiplier;
       if (source.type === 'tower' || source.type === 'core' || source.type === 'ranged' || source.type === 'siege' || (source.type === 'hero' && source.range >= 160)) {
-        spawnProjectile(runtime, source, target.x, target.y, damage, source.color, source.type === 'tower' || source.type === 'core' ? 760 : 610);
+        const projectileStyle: ProjectileStyle = source.type === 'ranged'
+          ? eraRef.current === 'medieval' ? 'arrow' : 'bullet'
+          : source.type === 'siege'
+            ? eraRef.current === 'medieval' ? 'stone' : 'rocket'
+            : 'energy';
+        spawnProjectile(runtime, source, target.x, target.y, damage, source.color, source.type === 'tower' || source.type === 'core' ? 760 : 610, projectileStyle);
       } else hit(target, damage, source.team);
       source.attackWait = source.type === 'hero' ? heroAttackDelay(source.heroId) : source.type === 'tower' ? .72 : source.type === 'core' ? .62 : source.type === 'siege' ? 1.65 : .92;
     };

@@ -93,6 +93,9 @@ Each hero has distinct health, speed, attack power, attack cadence, range, color
 - The minimap shows all three lanes plus the current positions of heroes, minions, towers, and both hearts.
 - The minimap shows both Power Relics and the camera's current viewport.
 - Battlefield units do not show nameplates; hero identity remains visible in selection and the player HUD.
+- Ranged minions must be identifiable by silhouette: Crownkeep archers carry a curved bow, drawn string, arrow, and back quiver, while Neon Divide riflemen carry a long rifle.
+- Siege minions must read as machinery rather than generic carts: Crownkeep catapults have large wheels, an A-frame, throwing arm, counterweight, bucket, and loaded stone; Neon Divide missile carriers use tracks and paired launch tubes.
+- Ranged and siege projectiles reinforce those identities with arrows and stones in Crownkeep and bullets and rockets in Neon Divide.
 - Bars are appropriate for live, changing resources such as health and XP. This restriction applies only to static character attributes.
 - Controls and progression should be understandable without opening external documentation.
 
@@ -137,3 +140,9 @@ Both battlegrounds use a large, camera-followed world. Lanes are long and wide, 
 - If the allied team destroys an enemy top-lane tower, its next siege-eligible wave adds one allied siege unit in top and none in middle or bottom.
 - The enemy team does not gain a siege lane when an enemy tower is destroyed; each team's unlocks depend on the towers that team destroys.
 - Destroying an enemy tower in another lane adds that lane without removing previously unlocked lanes.
+
+## Acceptance criteria for unit silhouettes
+
+- An archer and a melee minion remain distinguishable when viewed at the normal match zoom without labels.
+- A Crownkeep catapult visibly includes wheels and a raised throwing arm with a stone bucket.
+- The equivalent Neon Divide units remain mechanically identical but use rifle and missile-carrier silhouettes.
