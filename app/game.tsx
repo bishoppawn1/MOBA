@@ -7,6 +7,9 @@ type Team = 0 | 1;
 type Role = 'TANK' | 'ASSASSIN' | 'MAGE' | 'SUPPORT' | 'MARKSMAN' | 'FIGHTER';
 
 type Upgrade = { name: string; description: string; kind: 'power' | 'health' | 'speed' | 'haste' | 'ability' };
+const ABILITY_KEYS = ['q','e','r'] as const;
+const ABILITY_UNLOCK_LEVELS = [1,3,5] as const;
+
 export type Hero = {
   id: string; name: string; title: string; role: Role; color: string; accent: string;
   hp: number; speed: number; power: number; range: number;
@@ -56,7 +59,7 @@ type Unit = {
 };
 type Runtime = {
   units:Unit[]; keys:Set<string>; aim:{x:number;y:number}; teamXp:[number,number]; teamLevel:[number,number];
-  kills:[number,number]; elapsed:number; wave:number; nextWave:number; last:number; running:boolean;
+  kills:[number,number]; elapsed:number; wave:number; nextWave:number; last:number; running:boolean; paused:boolean;
   cooldowns:{q:number;e:number;r:number;basic:number}; outcome:''|'VICTORY'|'DEFEAT';
 };
 type Hud = { hp:number; maxHp:number; xp:[number,number]; need:[number,number]; level:[number,number]; kills:[number,number]; time:number; cooldowns:{q:number;e:number;r:number}; wave:number };
@@ -95,8 +98,8 @@ export function HeroSelect({onLaunch,onBack}:{onLaunch:(hero:Hero,era:Era)=>void
       <aside className="heroDetail" style={{'--hero':selected.color} as React.CSSProperties}>
         <div className="detailPortrait"><HeroPortrait hero={selected} large/><span className="roleFlag">{selected.role}</span></div>
         <p className="eyebrow">{selected.title}</p><h3>{selected.name}</h3>
-        <div className="statRows"><Stat label="VITALITY" value={selected.hp/10}/><Stat label="POWER" value={selected.power}/><Stat label="MOBILITY" value={selected.speed/2.5}/></div>
-        <div className="abilityList">{selected.abilities.map((a,i)=><div key={a}><kbd>{['Q','E','R'][i]}</kbd><span><b>{a}</b><small>{selected.abilityNotes[i]}</small></span></div>)}</div>
+        <div className="statRows"><Stat label="HEALTH" value={selected.hp}/><Stat label="ATTACK" value={selected.power}/><Stat label="MOVE SPEED" value={selected.speed}/></div>
+        <div className="abilityList">{selected.abilities.map((a,i)=><div key={a}><kbd>{ABILITY_KEYS[i].toUpperCase()}</kbd><span><b>{a}</b><small>{selected.abilityNotes[i]}</small></span><em>LEVEL {ABILITY_UNLOCK_LEVELS[i]}</em></div>)}</div>
       </aside>
     </section>
     <footer className="selectFooter">
@@ -106,7 +109,7 @@ export function HeroSelect({onLaunch,onBack}:{onLaunch:(hero:Hero,era:Era)=>void
   </main>;
 }
 
-function Stat({label,value}:{label:string;value:number}) { return <div><span>{label}</span><i><b style={{width:`${Math.min(100,value)}%`}}/></i></div>; }
+function Stat({label,value}:{label:string;value:number}) { return <div><span>{label}</span><b>{Math.round(value)}</b></div>; }
 
 function createUnit(partial:Partial<Unit>&Pick<Unit,'id'|'type'|'team'|'x'|'y'>):Unit {
   return {hp:100,maxHp:100,speed:0,damage:10,range:60,radius:18,color:'#fff',name:'UNIT',attackWait:0,...partial};
@@ -124,7 +127,7 @@ function setupGame(hero:Hero, era:Era):Runtime {
   units.push(createUnit({id:'core-1',type:'core',team:1,x:1510,y:450,hp:2200,maxHp:2200,radius:62,color:m.team1,name:m.heart,damage:70,range:180}));
   [340,590].forEach((x,i)=>units.push(createUnit({id:`tower-0-${i}`,type:'tower',team:0,x,y:450,hp:620,maxHp:620,radius:32,color:m.team0,name:m.tower,damage:56,range:205})));
   [1010,1260].forEach((x,i)=>units.push(createUnit({id:`tower-1-${i}`,type:'tower',team:1,x,y:450,hp:620,maxHp:620,radius:32,color:m.team1,name:m.tower,damage:56,range:205})));
-  return {units,keys:new Set(),aim:{x:600,y:450},teamXp:[0,0],teamLevel:[1,1],kills:[0,0],elapsed:0,wave:0,nextWave:.7,last:performance.now(),running:true,cooldowns:{q:0,e:0,r:0,basic:0},outcome:''};
+  return {units,keys:new Set(),aim:{x:600,y:450},teamXp:[0,0],teamLevel:[1,1],kills:[0,0],elapsed:0,wave:0,nextWave:.7,last:performance.now(),running:true,paused:false,cooldowns:{q:0,e:0,r:0,basic:0},outcome:''};
 }
 
 function drawBox(c:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,d:number,color:string){
@@ -176,14 +179,14 @@ function spawnProjectile(g:Runtime,source:Unit,tx:number,ty:number,damage=source
   g.units.push(createUnit({id:`p-${Math.random()}`,type:'projectile',team:source.team,x:source.x,y:source.y-8,hp:1,maxHp:1,speed,damage,range:0,radius:8,color,name:'SHOT',vx:(tx-source.x)/d*speed,vy:(ty-source.y)/d*speed,life:1.3,ownerType:source.type}));
 }
 
-function BattleCanvas({hero,era,onUpgrade,onOutcome,onHud}:{hero:Hero;era:Era;onUpgrade:()=>void;onOutcome:(o:'VICTORY'|'DEFEAT')=>void;onHud:(h:Hud)=>void}) {
+function BattleCanvas({hero,era,onUpgrade,onOutcome,onHud}:{hero:Hero;era:Era;onUpgrade:(level:number)=>void;onOutcome:(o:'VICTORY'|'DEFEAT')=>void;onHud:(h:Hud)=>void}) {
   const canvasRef=useRef<HTMLCanvasElement>(null); const gameRef=useRef<Runtime|null>(null); const heroRef=useRef(hero); const eraRef=useRef(era);
   const levelTeam=useCallback((g:Runtime,team:Team)=>{
     const need=g.teamLevel[team]*220;
     if(g.teamXp[team]<need||g.teamLevel[team]>=10)return;
     g.teamXp[team]-=need;g.teamLevel[team]++;
     g.units.filter(u=>u.type==='hero'&&u.team===team).forEach(u=>{u.maxHp*=1.09;u.hp=Math.min(u.maxHp,u.hp+u.maxHp*.18);u.damage*=1.055;});
-    if(team===0)onUpgrade();
+    if(team===0){g.paused=true;onUpgrade(g.teamLevel[team]);}
   },[onUpgrade]);
 
   useEffect(()=>{
@@ -195,6 +198,7 @@ function BattleCanvas({hero,era,onUpgrade,onOutcome,onHud}:{hero:Hero;era:Era;on
     const shoot=(ev:MouseEvent)=>{point(ev);const p=g.units.find(u=>u.id==='player');if(p&&!p.dead&&g.cooldowns.basic<=0){spawnProjectile(g,p,g.aim.x,g.aim.y,p.damage,p.color,620);g.cooldowns.basic=.34;}};
     const cast=(key:'q'|'e'|'r')=>{
       const p=g.units.find(u=>u.id==='player');if(!p||p.dead||g.cooldowns[key]>0||g.outcome)return;
+      const abilityIndex=ABILITY_KEYS.indexOf(key);if(g.teamLevel[0]<ABILITY_UNLOCK_LEVELS[abilityIndex])return;
       const h=heroRef.current, mult=p.abilityPower||1, dx=g.aim.x-p.x,dy=g.aim.y-p.y,len=Math.max(1,Math.hypot(dx,dy)),nx=dx/len,ny=dy/len;
       if(key==='q'){
         g.cooldowns.q=5/(p.haste||1);
@@ -241,8 +245,8 @@ function BattleCanvas({hero,era,onUpgrade,onOutcome,onHud}:{hero:Hero;era:Era;on
       [...g.units].sort((a,b)=>a.y-b.y).forEach(u=>{if(!u.dead)drawUnit(ctx,u,sx,sy,eraRef.current,g.elapsed);});
       const a=g.aim.x*sx,b=g.aim.y*sy;ctx.strokeStyle='#d3ff56aa';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(a-9,b);ctx.lineTo(a+9,b);ctx.moveTo(a,b-9);ctx.lineTo(a,b+9);ctx.stroke();
     };
-    let hudWait=0;const frame=(now:number)=>{const dt=Math.min(.033,(now-g.last)/1000);g.last=now;if(g.running)update(dt);render();hudWait-=dt;if(hudWait<=0){hudWait=.12;const p=g.units.find(u=>u.id==='player')!;onHud({hp:p.hp,maxHp:p.maxHp,xp:[...g.teamXp] as [number,number],need:[g.teamLevel[0]*220,g.teamLevel[1]*220],level:[...g.teamLevel] as [number,number],kills:[...g.kills] as [number,number],time:g.elapsed,cooldowns:{q:g.cooldowns.q,e:g.cooldowns.e,r:g.cooldowns.r},wave:g.wave});}if(g.running||g.outcome)requestAnimationFrame(frame);};
-    const applyUpgrade=(ev:Event)=>{const upgrade=(ev as CustomEvent<Upgrade>).detail,p=g.units.find(u=>u.id==='player');if(!p)return;if(upgrade.kind==='power')p.damage*=1.24;if(upgrade.kind==='health'){p.maxHp+=upgrade.description.includes('260')?260:upgrade.description.includes('240')?240:upgrade.description.includes('210')?210:220;p.hp=p.maxHp;}if(upgrade.kind==='speed')p.speed*=1.18;if(upgrade.kind==='haste')p.haste=(p.haste||1)*1.22;if(upgrade.kind==='ability')p.abilityPower=(p.abilityPower||1)*1.26;};
+    let hudWait=0;const frame=(now:number)=>{const dt=Math.min(.033,(now-g.last)/1000);g.last=now;if(g.running&&!g.paused)update(dt);render();hudWait-=dt;if(hudWait<=0){hudWait=.12;const p=g.units.find(u=>u.id==='player')!;onHud({hp:p.hp,maxHp:p.maxHp,xp:[...g.teamXp] as [number,number],need:[g.teamLevel[0]*220,g.teamLevel[1]*220],level:[...g.teamLevel] as [number,number],kills:[...g.kills] as [number,number],time:g.elapsed,cooldowns:{q:g.cooldowns.q,e:g.cooldowns.e,r:g.cooldowns.r},wave:g.wave});}if(g.running||g.outcome)requestAnimationFrame(frame);};
+    const applyUpgrade=(ev:Event)=>{const upgrade=(ev as CustomEvent<Upgrade>).detail,p=g.units.find(u=>u.id==='player');if(!p)return;if(upgrade.kind==='power')p.damage*=1.24;if(upgrade.kind==='health'){p.maxHp+=upgrade.description.includes('260')?260:upgrade.description.includes('240')?240:upgrade.description.includes('210')?210:220;p.hp=p.maxHp;}if(upgrade.kind==='speed')p.speed*=1.18;if(upgrade.kind==='haste')p.haste=(p.haste||1)*1.22;if(upgrade.kind==='ability')p.abilityPower=(p.abilityPower||1)*1.26;g.paused=false;};
     window.addEventListener('keydown',kd);window.addEventListener('keyup',ku);window.addEventListener('blockbound-upgrade',applyUpgrade);canvas.addEventListener('mousemove',point);canvas.addEventListener('mousedown',shoot);canvas.addEventListener('contextmenu',e=>e.preventDefault());requestAnimationFrame(frame);
     return()=>{g.running=false;window.removeEventListener('keydown',kd);window.removeEventListener('keyup',ku);window.removeEventListener('blockbound-upgrade',applyUpgrade);canvas.removeEventListener('mousemove',point);canvas.removeEventListener('mousedown',shoot);};
   },[levelTeam,onHud,onOutcome]);
@@ -251,19 +255,21 @@ function BattleCanvas({hero,era,onUpgrade,onOutcome,onHud}:{hero:Hero;era:Era;on
 
 export function Battle({hero,era,onExit}:{hero:Hero;era:Era;onExit:()=>void}) {
   const [hud,setHud]=useState<Hud>({hp:hero.hp,maxHp:hero.hp,xp:[0,0],need:[220,220],level:[1,1],kills:[0,0],time:0,cooldowns:{q:0,e:0,r:0},wave:0});
-  const [upgrade,setUpgrade]=useState(false);const [outcome,setOutcome]=useState<''|'VICTORY'|'DEFEAT'>('');const [tip,setTip]=useState(true);const gameKey=useMemo(()=>`${hero.id}-${era}-${Date.now()}`,[hero.id,era]);
-  const applyUpgrade=(u:Upgrade)=>{window.dispatchEvent(new CustomEvent('blockbound-upgrade',{detail:u}));setUpgrade(false);};
+  const [levelUp,setLevelUp]=useState<number|null>(null);const [outcome,setOutcome]=useState<''|'VICTORY'|'DEFEAT'>('');const [tip,setTip]=useState(true);const gameKey=useMemo(()=>`${hero.id}-${era}-${Date.now()}`,[hero.id,era]);
+  const handleLevelUp=useCallback((level:number)=>setLevelUp(level),[]);
+  const applyUpgrade=(u:Upgrade)=>{window.dispatchEvent(new CustomEvent('blockbound-upgrade',{detail:u}));setLevelUp(null);};
+  const unlockedAbilityIndex=levelUp===null?-1:ABILITY_UNLOCK_LEVELS.findIndex(level=>level===levelUp);
   useEffect(()=>{const t=setTimeout(()=>setTip(false),6000);return()=>clearTimeout(t);},[]);
   return <main className="battleScreen" style={{'--hero':hero.color} as React.CSSProperties}>
     <header className="battleTop"><div className="battleBrand"><span className="brandMark">B</span><span><small>{MAPS[era].sub}</small><b>{MAPS[era].name}</b></span></div><div className="score"><span className="blueScore">{hud.kills[0]}</span><b>{formatTime(hud.time)}</b><span className="redScore">{hud.kills[1]}</span></div><div className="waveCounter">WAVE <b>{hud.wave}</b><button onClick={onExit}>LEAVE</button></div></header>
     <div className="arenaFrame">
-      <BattleCanvas key={gameKey} hero={hero} era={era} onUpgrade={()=>setUpgrade(true)} onOutcome={setOutcome} onHud={setHud}/>
+      <BattleCanvas key={gameKey} hero={hero} era={era} onUpgrade={handleLevelUp} onOutcome={setOutcome} onHud={setHud}/>
       <div className="teamXp teamXpBlue"><span><b>YOUR TEAM · LEVEL {hud.level[0]}</b><small>{Math.floor(hud.xp[0])} / {hud.need[0]} XP</small></span><i><b style={{width:`${hud.xp[0]/hud.need[0]*100}%`}}/></i></div>
       <div className="teamXp teamXpRed"><span><small>{Math.floor(hud.xp[1])} / {hud.need[1]} XP</small><b>ENEMY · LEVEL {hud.level[1]}</b></span><i><b style={{width:`${hud.xp[1]/hud.need[1]*100}%`}}/></i></div>
-      {tip&&<div className="controlTip"><button onClick={()=>setTip(false)}>×</button><b>MOVE WITH <kbd>WASD</kbd></b><span>Aim with your mouse · Click to attack · Cast with <kbd>Q</kbd> <kbd>E</kbd> <kbd>R</kbd></span></div>}
-      {upgrade&&<div className="upgradeOverlay"><div className="upgradeModal"><p className="eyebrow">TEAM LEVEL {hud.level[0]} REACHED</p><h2>CHOOSE YOUR UPGRADE</h2><p>Every ally gained base stats. Choose one bonus unique to {hero.name}.</p><div>{hero.upgrades.map((u,i)=><button key={u.name} onClick={()=>applyUpgrade(u)}><kbd>{i+1}</kbd><span><b>{u.name}</b><small>{u.description}</small></span><i>›</i></button>)}</div></div></div>}
+      {tip&&<div className="controlTip"><button onClick={()=>setTip(false)}>×</button><b>MOVE WITH <kbd>WASD</kbd></b><span>Aim with your mouse · Click to attack · Abilities unlock at levels 1, 3, and 5</span></div>}
+      {levelUp!==null&&<div className="upgradeOverlay"><div className="upgradeModal"><p className="eyebrow">TEAM LEVEL {levelUp} REACHED</p><h2>CHOOSE YOUR UPGRADE</h2>{unlockedAbilityIndex>=0&&<div className="unlockBanner"><kbd>{ABILITY_KEYS[unlockedAbilityIndex].toUpperCase()}</kbd><span><small>ABILITY UNLOCKED</small><b>{hero.abilities[unlockedAbilityIndex]}</b></span></div>}<p>Every ally gained base stats. Choose one bonus unique to {hero.name}.</p><div className="upgradeChoices">{hero.upgrades.map((u,i)=><button key={u.name} onClick={()=>applyUpgrade(u)}><kbd>{i+1}</kbd><span><b>{u.name}</b><small>{u.description}</small></span><i>›</i></button>)}</div></div></div>}
       {outcome&&<div className="outcomeOverlay"><p>{outcome==='VICTORY'?'ENEMY HEART SHATTERED':'YOUR HEART HAS FALLEN'}</p><h2>{outcome}</h2><div><span>TEAM LEVEL <b>{hud.level[0]}</b></span><span>TAKEDOWNS <b>{hud.kills[0]}</b></span><span>TIME <b>{formatTime(hud.time)}</b></span></div><button onClick={onExit}>RETURN TO HQ</button></div>}
     </div>
-    <footer className="battleHud"><div className="playerPanel"><HeroPortrait hero={hero}/><span><small>{hero.role}</small><b>{hero.name}</b><i><b style={{width:`${Math.max(0,hud.hp/hud.maxHp*100)}%`}}/></i><em>{Math.ceil(Math.max(0,hud.hp))} / {Math.ceil(hud.maxHp)}</em></span></div><div className="abilities">{hero.abilities.map((name,i)=>{const key=['q','e','r'][i] as 'q'|'e'|'r',cd=hud.cooldowns[key];return <div key={name} className={cd>0?'cooling':''}><kbd>{key.toUpperCase()}</kbd><i style={{'--cool':`${Math.min(100,cd/(i===2?24:i===1?8:5)*100)}%`} as React.CSSProperties}>{cd>0?cd.toFixed(1):['◆','✦','✹'][i]}</i><span>{name}</span></div>})}<div className="basicAbility"><kbd>CLICK</kbd><i>➤</i><span>Basic attack</span></div></div><div className="minimap"><i className="miniLane"/><i className="miniBase blueMini"/><i className="miniBase redMini"/><b className="miniPlayer"/></div></footer>
+    <footer className="battleHud"><div className="playerPanel"><HeroPortrait hero={hero}/><span><small>{hero.role}</small><b>{hero.name}</b><i><b style={{width:`${Math.max(0,hud.hp/hud.maxHp*100)}%`}}/></i><em>{Math.ceil(Math.max(0,hud.hp))} / {Math.ceil(hud.maxHp)}</em></span></div><div className="abilities">{hero.abilities.map((name,i)=>{const key=ABILITY_KEYS[i],cd=hud.cooldowns[key],unlockLevel=ABILITY_UNLOCK_LEVELS[i],locked=hud.level[0]<unlockLevel;return <div key={name} className={locked?'locked':cd>0?'cooling':''} aria-label={locked?`${name}, unlocks at level ${unlockLevel}`:name}><kbd>{key.toUpperCase()}</kbd><i style={{'--cool':`${Math.min(100,cd/(i===2?24:i===1?8:5)*100)}%`} as React.CSSProperties}>{locked?`LVL ${unlockLevel}`:cd>0?cd.toFixed(1):['◆','✦','✹'][i]}</i><span>{name}</span></div>})}<div className="basicAbility"><kbd>CLICK</kbd><i>➤</i><span>Basic attack</span></div></div><div className="minimap"><i className="miniLane"/><i className="miniBase blueMini"/><i className="miniBase redMini"/><b className="miniPlayer"/></div></footer>
   </main>;
 }
