@@ -43,7 +43,7 @@ The intended match loop is:
 - Lane minions and bots follow the same converging curved centerlines shown by the terrain and minimap rather than traveling directly from left to right.
 - Each side has two towers in each lane and one final heart structure.
 - Towers and hearts are durable, high-damage safe zones that punish unsupported dives.
-- Heroes, towers, and hearts acquire opponents by physical proximity regardless of which lane label the opponent last followed. Minions retain lane-locked acquisition so waves remain organized.
+- Heroes, towers, hearts, and lane minions acquire opponents by physical proximity regardless of which lane label the opponent last followed. Minions use their lane path only while marching; a nearby enemy hero takes combat priority, and minions may leave the road to pursue until that hero exits their awareness radius.
 - Melee, ranged, and siege minions have enough health to sustain a lane fight rather than disappearing in one or two attacks.
 - Two Power Relics sit in the rotation space between lanes. Holding one for three uncontested seconds grants 160 shared XP and a 25-second team damage boost.
 - Four gold mercenary camps sit in the jungle between lanes. Neutral mercenaries fight heroes inside their visible camp boundary, stop chasing when a hero leaves it, return home, and recover health.
@@ -207,7 +207,9 @@ Both battlegrounds use the same 4800×2700 camera-followed world. Lanes are long
 
 - A hero entering from another lane is attacked when physically inside an enemy hero's awareness radius; lane metadata cannot make the nearby hero invisible to combat AI.
 - Towers and hearts attack eligible opponents inside their actual range regardless of the opponent's lane metadata.
-- Minions remain lane-disciplined and do not abandon their wave merely because another lane passes nearby.
+- Melee, ranged, and siege minions acquire nearby opponents by physical distance rather than lane metadata.
+- A nearby enemy hero takes priority over a minion's default lane march, causing the minion to leave the road and pursue within its awareness radius.
+- When no opponent remains nearby, the minion returns to pushing the next tower or heart along its assigned lane.
 
 ## Acceptance criteria for mercenary camps
 

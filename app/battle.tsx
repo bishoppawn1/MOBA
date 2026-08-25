@@ -906,6 +906,20 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
       return best;
     };
 
+    const nearestEnemyHero = (source: Unit, maximum: number) => {
+      let best: Unit | undefined;
+      let bestDistance = maximum;
+      for (const candidate of runtime.units) {
+        if (candidate.type !== 'hero' || candidate.team === source.team || candidate.dead) continue;
+        const currentDistance = distance(source, candidate);
+        if (currentDistance < bestDistance) {
+          best = candidate;
+          bestDistance = currentDistance;
+        }
+      }
+      return best;
+    };
+
     const nearestMercenaryEnemy = (source: Unit) => {
       const camp = runtime.mercenaryCamps.find((candidate) => candidate.id === source.campId);
       if (!camp) return undefined;
@@ -1342,11 +1356,18 @@ function BattleCanvas({ hero, era, selectedAbilities, onLevelUp, onOutcome, onHu
           continue;
         }
 
-        const awareness = current.type === 'hero' ? Math.max(430, current.range + 170) : 270;
+        const laneMinion = current.type === 'melee' || current.type === 'ranged' || current.type === 'siege';
+        const awareness = current.type === 'hero'
+          ? Math.max(430, current.range + 170)
+          : laneMinion
+            ? Math.max(340, current.range + 130)
+            : 270;
         const target = current.type === 'hero'
           ? nearestEnemy(current, awareness)
-          : trackedEnemy(current, awareness, true);
-        if (current.type === 'hero') current.targetId = target?.id;
+          : laneMinion
+            ? nearestEnemyHero(current, 340) ?? nearestEnemy(current, awareness)
+            : trackedEnemy(current, awareness, true);
+        if (current.type === 'hero' || laneMinion) current.targetId = target?.id;
         if (target) attack(current, target, delta);
         else {
           const objective = objectiveFor(current);
