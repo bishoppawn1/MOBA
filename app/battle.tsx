@@ -328,7 +328,7 @@ function drawBox(context: CanvasRenderingContext2D, x: number, y: number, width:
 }
 
 function drawHealth(context: CanvasRenderingContext2D, current: Unit, x: number, y: number) {
-  const width = current.type === 'core' ? 150 : current.type === 'tower' ? 92 : current.type === 'hero' ? 58 : 40;
+  const width = current.type === 'core' ? 150 : current.type === 'tower' ? 92 : current.type === 'hero' ? 58 : current.type === 'melee' ? 34 : 40;
   context.fillStyle = '#0d120f';
   context.fillRect(x - width / 2, y, width, 9);
   context.fillStyle = current.team === 0 ? '#51b9ff' : '#ff6558';
@@ -464,6 +464,67 @@ function drawRangedUnit(context: CanvasRenderingContext2D, current: Unit, era: E
   drawHealth(context, current, x, y - 82);
 }
 
+function drawSword(context: CanvasRenderingContext2D, x: number, y: number, direction: number, modern: boolean) {
+  context.save();
+  context.translate(x, y);
+  context.rotate(direction * .5);
+  if (modern) {
+    context.shadowColor = '#d3ff56';
+    context.shadowBlur = 10;
+  }
+  drawBox(context, 0, -16, 5, 28, 2, modern ? '#d3ff56' : '#e7e4d5');
+  context.fillStyle = modern ? '#d3ff56' : '#e7e4d5';
+  context.beginPath();
+  context.moveTo(0, -35);
+  context.lineTo(-4, -29);
+  context.lineTo(4, -29);
+  context.closePath();
+  context.fill();
+  context.shadowBlur = 0;
+  drawBox(context, 0, 0, 18, 4, 2, modern ? '#313d42' : '#c29a4a');
+  drawBox(context, 0, 8, 5, 12, 2, modern ? '#222b2f' : '#5c3a24');
+  context.restore();
+}
+
+function drawMeleeUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, x: number, y: number) {
+  const direction = current.team === 0 ? 1 : -1;
+  drawBox(context, x - 5, y + 4, 7, 18, 2, shade(current.color, -28));
+  drawBox(context, x + 5, y + 4, 7, 18, 2, shade(current.color, -28));
+  drawBox(context, x, y - 13, 23, 29, 5, current.color);
+  drawBox(context, x + direction * 12, y - 13, 7, 22, 2, shade(current.color, -12));
+  drawBox(context, x, y - 39, 18, 18, 4, shade(current.color, 25));
+
+  const shieldX = x - direction * 14;
+  context.fillStyle = shade(current.color, -18);
+  context.strokeStyle = '#101810';
+  context.lineWidth = 2.5;
+  context.beginPath();
+  context.moveTo(shieldX - 8, y - 28);
+  context.lineTo(shieldX + 8, y - 28);
+  context.lineTo(shieldX + 8, y - 10);
+  context.lineTo(shieldX, y - 3);
+  context.lineTo(shieldX - 8, y - 10);
+  context.closePath();
+  context.fill();
+  context.stroke();
+  context.fillStyle = shade(current.color, 30);
+  context.fillRect(shieldX - 3, y - 19, 6, 6);
+
+  if (era === 'medieval') {
+    drawBox(context, x, y - 49, 23, 8, 3, '#666d64');
+    drawBox(context, x - direction * 6, y - 43, 7, 4, 2, '#242a25');
+    drawSword(context, x + direction * 15, y - 10, direction, false);
+  } else {
+    drawBox(context, x, y - 49, 22, 9, 3, '#303a3f');
+    context.fillStyle = '#c5f7ff';
+    context.fillRect(x - 7, y - 44, 14, 4);
+    context.fillStyle = '#1d272b';
+    context.fillRect(shieldX - 5, y - 24, 10, 4);
+    drawSword(context, x + direction * 15, y - 10, direction, true);
+  }
+  drawHealth(context, current, x, y - 65);
+}
+
 function drawUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, elapsed: number) {
   const x = current.renderX ?? current.x;
   const y = current.renderY ?? current.y;
@@ -522,7 +583,8 @@ function drawUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, el
   context.save();
   context.fillStyle = '#14201640';
   context.beginPath();
-  context.ellipse(x + 10, y + 16, current.radius * 1.25, current.radius * .58, 0, 0, Math.PI * 2);
+  const shadowScale = current.type === 'melee' ? .88 : 1.25;
+  context.ellipse(x + 10, y + 16, current.radius * shadowScale, current.radius * (current.type === 'melee' ? .42 : .58), 0, 0, Math.PI * 2);
   context.fill();
 
   if (current.type === 'core') {
@@ -586,13 +648,7 @@ function drawUnit(context: CanvasRenderingContext2D, current: Unit, era: Era, el
       context.restore();
       return;
     }
-    drawBox(context, x - 7, y + 5, 11, 24, 3, shade(current.color, -20));
-    drawBox(context, x + 7, y + 5, 11, 24, 3, shade(current.color, -20));
-    drawBox(context, x, y - 15, 31, 35, 6, current.color);
-    drawBox(context, x, y - 47, 24, 24, 5, shade(current.color, 26));
-    const direction = current.team === 0 ? 1 : -1;
-    drawBox(context, x + direction * 22, y - 21, 8, 40, 3, era === 'medieval' ? '#ece3c2' : '#29343b');
-    drawHealth(context, current, x, y - 76);
+    drawMeleeUnit(context, current, era, x, y);
   }
   context.restore();
 }
