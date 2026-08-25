@@ -25,7 +25,10 @@ The intended match loop is:
 | Attack-move | Press `A`, then left-click the ground |
 | Focus attack | Press `A`, then left-click an enemy |
 | Basic attack | Automatic while attack-moving, focusing a target, or idle near an enemy |
-| Ability slots | `Q`, `W`, `E`, `R`, `T` |
+| Aim an ability | Press `Q`, `W`, `E`, `R`, or `T` |
+| Cast an aimed ability | Left-click after its preview appears |
+| Move while aiming | Right-click normally; the ability remains armed |
+| Cancel ability targeting | `Escape`, the same ability key, or `A` |
 
 ## Match rules
 
@@ -58,6 +61,8 @@ The intended match loop is:
 - Ability milestones at levels 5, 10, 15, and 20 pause the match and present two hero-flavored choices for the newly opened slot.
 - The level-1 starter is fixed. Each later choice is permanent for that match and fills the corresponding empty slot in the bottom ability bar.
 - Pressing the key for an empty ability slot must do nothing and must not start a cooldown.
+- Pressing an available ability key arms it without casting or starting its cooldown. A live indicator follows the pointer and shows the actual line, cone, dash path, ground radius, or self-centered radius that will be affected.
+- While an ability is armed, right-click movement remains available and does not dismiss the preview. Left-click confirms the cast from the hero's current position; `Escape`, `A`, or pressing the same key again cancels it.
 
 ### Ability unlock cadence
 
@@ -94,6 +99,7 @@ Each hero has distinct health, speed, attack power, attack cadence, range, color
 - Ability rows on the selection screen show each slot, name, description, unlock level, and available choices.
 - The battle HUD shows current health, team XP and level, kills, match time, wave number, a compact five-slot ability bar, cooldowns, and a live minimap.
 - The ability bar sits near the bottom-left and always shows `Q`, `W`, `E`, `R`, and `T`; empty slots show the level required to open them.
+- The currently armed ability is highlighted in the ability bar, and the command banner identifies it while reminding the player how to cast, move, or cancel.
 - Ordinary level-ups use a brief notice without stopping the match.
 - Ability milestones pause the match and open a compact two-choice panel immediately above the ability bar.
 - The minimap shows all three lanes plus the current positions of heroes, minions, mercenaries, towers, and both hearts.
@@ -140,6 +146,10 @@ Both battlegrounds use a large, camera-followed world. Lanes are long, wide, and
 - Levels 5, 10, 15, and 20 pause play and present two choices for the new slot.
 - Choosing an ability closes the panel, fills its slot, and resumes the match.
 - Empty-slot inputs do not consume cooldowns.
+- Pressing an available ability key shows its targeting preview but does not deal damage, move the hero, launch projectiles, or consume its cooldown until left-click confirms it.
+- Directional bolts and volleys preview every projectile path; dashes preview their travel path and landing damage radius; ground blasts preview their clamped cast range and impact radius; self fields preview their radius around the moving hero.
+- Right-clicking while an ability is armed moves the hero while keeping the ability armed, and the preview updates from the hero's new position.
+- `Escape`, `A`, or pressing the armed ability key again cancels targeting without consuming a cooldown.
 - Ember starts with Cinder Bolt, then chooses between Flame Ring and Ash Step at level 5, Wildfire and Meteor Brand at level 10, Cinder Bolt Barrage and Firestorm at level 15, and Ascendant Wildfire and Phoenix Dawn at level 20.
 - Hero selection and the in-match HUD communicate the same slots, choices, and milestone levels.
 
